@@ -1,8 +1,21 @@
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   main.c                                             :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2026/09/25 19:09:08 by janrodri          #+#    #+#             */
+/*   Updated: 2026/09/25 19:15:10 by janrodri         ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
 #include <pthread.h>
 #include <stdio.h>
 
-int main()
+
+int	main(void)
 {
-    printf("Initializating\n");
-    return 0;
+	printf("Initializating\n");
+	return (0);
 }
