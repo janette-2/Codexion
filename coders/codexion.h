@@ -6,14 +6,14 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/11 19:06:58 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/11 19:09:16 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #ifndef CODEXION_H
-#	define CODEXION_H
+# define CODEXION_H
 
-#include <pthread.h>
+# include <pthread.h>
 
 typedef struct s_coder
 {
@@ -40,4 +40,3 @@ typedef struct s_control
 }	t_control;
 
 #endif
-
