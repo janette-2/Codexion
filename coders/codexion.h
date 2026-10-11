@@ -1,19 +1,19 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   test_header.h                                      :+:      :+:    :+:   */
+/*   codexion.h                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2026/10/09 19:16:08 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/09 19:51:12 by janrodri         ###   ########.fr       */
+/*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
+/*   Updated: 2026/10/11 19:06:58 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#ifndef TEST_HEADER_H
-# define TEST_HEADER_H
+#ifndef CODEXION_H
+#	define CODEXION_H
 
-# include <pthread.h>
+#include <pthread.h>
 
 typedef struct s_coder
 {
@@ -40,3 +40,4 @@ typedef struct s_control
 }	t_control;
 
 #endif
+

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/05 18:58:08 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/11 19:06:16 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -73,3 +73,4 @@ int	main(int argc, char *arg[])
 		return (1);
 	return (0);
 }
+
