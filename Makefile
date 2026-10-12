@@ -1,7 +1,11 @@
 NAME = codexion
 CC = cc 
 FLAGS = -Wall -Wextra -Werror -pthread
-SRC = coders/main.c
+
+SRC = coders/main.c \
+	coders/init.c \
+	coders/compiling.c \
+
 OBJ = $(SRC:.c=.o)
 
 all: $(NAME)
