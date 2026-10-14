@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/12 18:53:09 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 13:18:42 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/14 14:31:39 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,6 +21,8 @@ int	parse_int(char *arg)
 	int	i;
 
 	i = 0;
+	if (arg[0] == '\0' || arg == NULL)
+		return (-4);
 	if (arg[0] == '-')
 		return (-1);
 	while (i < (int) strlen(arg))
@@ -32,7 +34,9 @@ int	parse_int(char *arg)
 	}
 	if (atoi(arg) == 0)
 		return (-2);
-	if (strlen(arg) >= 10 && strcmp("2147483647", arg) < 0)
+	if (
+		(strlen(arg) == 10 && strcmp("2147483647", arg) < 0)
+		|| (strlen(arg) > 10))
 		return (-3);
 	return (atoi(arg));
 }
@@ -65,6 +69,8 @@ int	limit_cases(char *arg, int index_arg)
 		if (parsed == -3)
 			printf("The given value: '%s' can't surpass 2147483647\n",
 				arg);
+		if (parsed == -4)
+			printf("The given values can't be empty\n");
 		return (1);
 	}
 	return (0);
