@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/12 19:07:08 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/14 13:09:30 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -53,6 +53,6 @@ typedef struct s_dongle
 }	t_dongle;
 
 /* INIT.C */
-int	check_args(int argc, char **arg);
+int	check_args(int argc, char **arg, t_control *control);
 
 #endif

@@ -6,12 +6,11 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/12 18:53:09 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/12 20:32:22 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/14 13:18:42 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "codexion.h"
-#include <limits.h>
 
 /*If the result is invalid, returns '-1'.
 If the result is valid but is 0, return '-2',
@@ -42,7 +41,7 @@ int	print_error_args(void)
 {
 	printf("Error.\nThe expected 8 arguments are:\n"
 		"<number_of_coders> <time_to_burnout> <time_to_compile>\n"
-		"<time_to_debug> <time_to_refactor> <number_of_compiles>\n"
+		"<time_to_debug> <time_to_refactor> <number_of_compiles_required>\n"
 		"<dongle_cooldown> <scheduler>\n");
 	return (1);
 }
@@ -71,7 +70,19 @@ int	limit_cases(char *arg, int index_arg)
 	return (0);
 }
 
-int	check_args(int argc, char **arg)
+void	control_args(t_control *control, char *args[])
+{
+	(*control).number_of_coders = atoi(args[1]);
+	(*control).time_to_burnout = atoi(args[2]);
+	(*control).time_to_compile = atoi(args[3]);
+	(*control).time_to_debug = atoi(args[4]);
+	(*control).time_to_refactor = atoi(args[5]);
+	(*control).number_of_compiles_required = atoi(args[6]);
+	(*control).dongle_cooldown = atoi(args[7]);
+	(*control).scheduler = args[8];
+}
+
+int	check_args(int argc, char **arg, t_control *control)
 {
 	int	i;
 	int	parsed;
@@ -86,5 +97,6 @@ int	check_args(int argc, char **arg)
 			return (1);
 		i++;
 	}
+	control_args(control, arg);
 	return (0);
 }
