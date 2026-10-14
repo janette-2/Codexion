@@ -5,6 +5,8 @@ FLAGS = -Wall -Wextra -Werror -pthread
 SRC = coders/main.c \
 	coders/init.c \
 	coders/compiling.c \
+	coders/coders.c \
+	coders/dongles.c
 
 OBJ = $(SRC:.c=.o)
 

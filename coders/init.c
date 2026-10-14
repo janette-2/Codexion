@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/12 18:53:09 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 14:31:39 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/14 16:22:39 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -86,6 +86,7 @@ void	control_args(t_control *control, char *args[])
 	(*control).number_of_compiles_required = atoi(args[6]);
 	(*control).dongle_cooldown = atoi(args[7]);
 	(*control).scheduler = args[8];
+	control->simulation_status = 1;
 }
 
 int	check_args(int argc, char **arg, t_control *control)
