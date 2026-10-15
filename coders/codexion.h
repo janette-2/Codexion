@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/15 16:50:39 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/15 20:45:07 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,6 +18,7 @@
 # include <stdio.h>
 # include <string.h>
 # include <stdlib.h>
+# include <sys/time.h>
 
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
@@ -37,9 +38,9 @@ struct s_coder
 
 struct s_dongle
 {
-	int		state_dongle; //0 for blocked, 1 for free, 2 for cooldown
-	int		dongle_id;
-	int		available_at;
+	int			state_dongle; //0 for blocked, 1 for free, 2 for cooldown
+	int			dongle_id;
+	long long	available_at;
 };
 
 struct s_control
@@ -53,6 +54,7 @@ struct s_control
 	int			time_to_refactor;
 	int			dongle_cooldown;
 	int			simulation_status;
+	long long	start_time;
 	// 2 for finished, 1 for running, 0 for stopped
 	t_coder		*coders;
 	t_dongle	*dongles;

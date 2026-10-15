@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/15 16:50:06 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/15 20:53:36 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -28,8 +28,11 @@ void	free_control(t_control *control)
 
 int	main(int argc, char *arg[])
 {
-	t_control	control;
+	t_control		control;
+	struct timeval	time_start;
 
+	gettimeofday(&time_start, NULL);
+	control.start_time = (time_start.tv_sec * 1000) + time_start.tv_usec / 1000;
 	control.coders = NULL;
 	control.dongles = NULL;
 	if (check_args(argc, arg, &control) == 1)
