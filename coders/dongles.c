@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 17:02:56 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 20:15:13 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/15 14:04:57 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,3 +38,27 @@ int	init_dongles(t_control *control)
 	return (0);
 }
 
+void	dongles_assignation(t_control *control)
+{
+	int		n;
+	int		i;
+	t_coder	*coders;
+
+	n = control->number_of_coders;
+	coders = control->coders;
+	i = 0;
+	while (i < n)
+	{
+		if (i == 0)
+		{
+			coders[0].left_dongle = i + 1;
+			coders[0].right_dongle = n;
+		}
+		else
+		{
+			coders[i].left_dongle = i + 1;
+			coders[i].right_dongle = i ;
+		}
+		i++;
+	}
+}

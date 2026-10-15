@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 20:46:56 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/15 12:40:35 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,7 +19,6 @@ void	free_control(t_control *control)
 		free(control->coders);
 		control->coders = NULL;
 	}
-
 	if (control->dongles)
 	{
 		free(control->dongles);
