@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/15 12:40:35 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/15 16:50:06 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -36,5 +36,6 @@ int	main(int argc, char *arg[])
 		return (1);
 	if (init_coders(&control) == -1 || init_dongles(&control) == -1)
 		return (free_control(&control), 1);
+	dongles_assignation(&control);
 	return (free_control(&control), 0);
 }

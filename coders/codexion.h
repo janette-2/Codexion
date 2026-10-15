@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 20:33:20 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/15 16:50:39 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -39,6 +39,7 @@ struct s_dongle
 {
 	int		state_dongle; //0 for blocked, 1 for free, 2 for cooldown
 	int		dongle_id;
+	int		available_at;
 };
 
 struct s_control
@@ -63,6 +64,7 @@ int		check_args(int argc, char **arg, t_control *control);
 /* DONGLES.C */
 void	dongles_args(t_dongle *dongle, int i);
 int		init_dongles(t_control *control);
+void	dongles_assignation(t_control *control);
 
 /* CODERS.C */
 void	coder_args(t_coder *coder, int i, t_control *control);
