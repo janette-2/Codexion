@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/12 19:24:23 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/16 20:07:13 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,8 +23,8 @@ int	compile_previous(t_coder coder)
 void	compiling(t_control control, t_dongle *left,
 	t_dongle *right, t_coder coder)
 {
-	(*left).state_dongle = 0;
-	(*right).state_dongle = 0;
+	(*left).state_dongle = DONGLE_BLOCKED;
+	(*right).state_dongle = DONGLE_BLOCKED;
 	(void) control;
 	(void) coder;
 }

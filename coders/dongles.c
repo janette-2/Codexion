@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 17:02:56 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/15 17:14:41 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/16 20:05:18 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,7 +14,7 @@
 
 void	dongles_args(t_dongle *dongle, int i)
 {
-	dongle->state_dongle = 1;
+	dongle->state_dongle = DONGLE_FREE;
 	dongle->dongle_id = i;
 	dongle->available_at = 0;
 }
@@ -62,4 +62,10 @@ void	dongles_assignation(t_control *control)
 		}
 		i++;
 	}
+}
+
+void	cooldown_available_time_dongle(t_dongle *dongle, t_control *control)
+{
+	if (dongle->state_dongle == DONGLE_COOLDOWN)
+		dongle->available_at = current_time() + control->dongle_cooldown;
 }

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/16 14:01:02 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/16 20:23:27 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,20 +20,25 @@
 # include <stdlib.h>
 # include <sys/time.h>
 
+# define DONGLE_BLOCKED 0
+# define DONGLE_FREE 1
+# define DONGLE_COOLDOWN 2
+
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
 typedef struct s_dongle		t_dongle;
 
 struct s_coder
 {
-	int			id;
-	int			number_of_compiles_done;
-	int			last_compilation;
-	pthread_t	coder_pthread;
-	t_control	*control;
+	int				id;
+	int				number_of_compiles_done;
+	long long		last_compilation;
+	pthread_t		coder_pthread;
+	t_control		*control;
 	// Everyone access to the same control variable through a pointer
-	int			left_dongle;
-	int			right_dongle;
+	int				left_dongle;
+	int				right_dongle;
+	pthread_mutex_t	dongles_lock;
 };
 
 struct s_dongle
@@ -55,7 +60,6 @@ struct s_control
 	int			dongle_cooldown;
 	int			simulation_status;
 	long long	start_time;
-	// 2 for finished, 1 for running, 0 for stopped
 	t_coder		*coders;
 	t_dongle	*dongles;
 };
@@ -67,6 +71,8 @@ int			check_args(int argc, char **arg, t_control *control);
 void		dongles_args(t_dongle *dongle, int i);
 int			init_dongles(t_control *control);
 void		dongles_assignation(t_control *control);
+void		cooldown_available_time_dongle(
+				t_dongle *dongle, t_control *control);
 
 /* CODERS.C */
 void		coder_args(t_coder *coder, int i, t_control *control);
