@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/16 20:23:27 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/16 20:35:45 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,7 +38,6 @@ struct s_coder
 	// Everyone access to the same control variable through a pointer
 	int				left_dongle;
 	int				right_dongle;
-	pthread_mutex_t	dongles_lock;
 };
 
 struct s_dongle
@@ -50,18 +49,21 @@ struct s_dongle
 
 struct s_control
 {
-	int			number_of_coders;
-	char		*scheduler;
-	int			number_of_compiles_required;
-	int			time_to_burnout;
-	int			time_to_compile;
-	int			time_to_debug;
-	int			time_to_refactor;
-	int			dongle_cooldown;
-	int			simulation_status;
-	long long	start_time;
-	t_coder		*coders;
-	t_dongle	*dongles;
+	int				number_of_coders;
+	char			*scheduler;
+	int				number_of_compiles_required;
+	int				time_to_burnout;
+	int				time_to_compile;
+	int				time_to_debug;
+	int				time_to_refactor;
+	int				dongle_cooldown;
+	int				simulation_status;
+	long long		start_time;
+	t_coder			*coders;
+	t_dongle		*dongles;
+	pthread_mutex_t	mtx_dongles;
+	pthread_mutex_t	mtx_log;
+	pthread_cond_t	cond_dongles;
 };
 
 /* INIT.C */
@@ -80,4 +82,5 @@ int			init_coders(t_control *control);
 
 /* SIMULATION.C */
 long long	current_time(void);
+
 #endif
