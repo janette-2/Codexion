@@ -6,7 +6,8 @@ SRC = coders/main.c \
 	coders/init.c \
 	coders/compiling.c \
 	coders/coders.c \
-	coders/dongles.c
+	coders/dongles.c \
+	coders/simulation.c
 
 OBJ = $(SRC:.c=.o)
 

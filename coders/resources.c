@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/15 16:57:14 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/15 17:12:52 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/16 14:01:53 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,5 +21,3 @@ int	dongles_available(t_control *control, int left_id, int right_id)
 			return (1);
 	return (0);
 }
-
-
