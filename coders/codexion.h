@@ -83,4 +83,13 @@ int			init_coders(t_control *control);
 /* SIMULATION.C */
 long long	current_time(void);
 
+/* SYNC.C */
+int			init_sync(t_control *control);
+void		destroy_sync(t_control *control, int created);
+
+/* RESOURCES.C */
+int			dongles_available(t_control *control, int left_id, int right_id);
+int			dongle_ready(t_dongle *dongle);
+void		log_line(t_control *control, const char *message, int id);
+
 #endif

@@ -114,6 +114,7 @@ coders/
 ├── init.c
 ├── coders.c
 ├── dongles.c
+├── resources.c
 └── compiling.c
 ```
 
@@ -163,6 +164,11 @@ Responsible for:
 ### `compiling.c`
 
 Will contain the compilation workflow executed by each coder thread.
+
+### `resources.c`
+
+Contains resource-availability helpers. Its logic is still provisional and
+will be replaced or completed when atomic dongle acquisition is implemented.
 
 ---
 
@@ -225,12 +231,15 @@ A dongle stores:
 The possible states are conceptually:
 
 ```text
+BLOCKED
 FREE
-IN_USE
 COOLDOWN
 ```
 
-The final implementation may represent these states with integers or another suitable design that respects the subject restrictions.
+The current code represents these states with named `#define` constants:
+`DONGLE_BLOCKED`, `DONGLE_FREE` and `DONGLE_COOLDOWN`. This avoids numeric
+magic values while keeping the state type simple. A C `enum` has not yet been
+introduced in the current implementation.
 
 The dongles are also stored in a dynamically allocated array.
 
@@ -476,6 +485,27 @@ The operating system scheduler decides when each thread actually runs. Therefore
 
 The scheduler requested by the command-line arguments controls the order in which coders are selected when resources become available. It does not directly control the operating system's thread scheduler.
 
+### Thread completion and `pthread_join`
+
+The main thread does not discover that another thread has finished by polling
+the `pthread_t` value. It waits explicitly with `pthread_join`.
+
+The intended lifecycle is:
+
+```text
+1. Initialise synchronization objects.
+2. Create each coder thread and store its pthread_t.
+3. Create the monitor when that phase is implemented.
+4. Join every thread that was successfully created.
+5. Destroy synchronization objects only after all joins return.
+6. Free the shared arrays.
+```
+
+If creation fails after some threads have already started, the program must
+stop creating new threads, notify the existing ones if necessary, join only
+the threads that were successfully created, and then clean up. A thread that
+was never created must not be joined.
+
 ---
 
 ## FIFO Scheduler
@@ -535,6 +565,13 @@ When the simulation ends, the monitor will update the shared simulation status a
 ## Synchronisation
 
 The project will use mutexes and condition variables to protect shared state.
+
+The current `t_control` declaration contains the first synchronization
+objects, but their initialization and destruction are still being completed.
+`mtx_dongles` is intended for shared resource-management state, `mtx_log` for
+serialized output, and `cond_dongles` for waiting coders. The condition
+variable must be initialized before any thread can wait on it and destroyed
+only after all waiting threads have finished.
 
 Mutexes will protect:
 

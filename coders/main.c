@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/16 14:18:55 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/17 20:09:00 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -29,6 +29,7 @@ void	free_control(t_control *control)
 int	main(int argc, char *arg[])
 {
 	t_control		control;
+	int				created;
 
 	control.coders = NULL;
 	control.dongles = NULL;
@@ -38,5 +39,11 @@ int	main(int argc, char *arg[])
 		return (free_control(&control), 1);
 	dongles_assignation(&control);
 	control.start_time = current_time();
+	created = 0;
+	if (init_sync(&control) != 0)
+		return (free_control(&control), 1);
+	created = 3;
+	log_line(&control, "simulation started", 0);
+	destroy_sync(&control, created);
 	return (free_control(&control), 0);
 }

@@ -17,6 +17,16 @@
 - [x] Helper de tiempo en ms con `gettimeofday` (`simulation.c` → `current_time`).
 - [x] `free_control` en `main.c`.
 
+### Trabajo reciente revisado
+
+- [ ] Se ha iniciado la inicialización y destrucción de `mtx_dongles`,
+  `mtx_log` y `cond_dongles` en `main.c`.
+- [ ] El ciclo de vida de los hilos todavía no está implementado: aún no hay
+  `pthread_create` ni `pthread_join`.
+- [ ] La inicialización de sincronización todavía debe devolver siempre un
+  resultado válido y limpiar únicamente los objetos que hayan llegado a
+  inicializarse.
+
 ### Deuda detectada (corregir en el Hito 1)
 
 - [ ] `resources.c` **no está en el Makefile** (SRC) — se compila a medias o nada.
@@ -58,7 +68,7 @@ Hilos, mutexes, condvars, logging serializado, adquisición atómica, cooldown r
 - [x] **1.1** Definir defines de estados (`DONGLE_BLOCKED/FREE/COOLDOWN`) y sustituir los números mágicos en `dongles.c`, `resources.c` y `compiling.c`. _Pendiente: defines de `SIM_RUNNING/STOPPED/FINISHED` para `simulation_status` (se harán al cablear la terminación)._
 - [x] **1.2** Corregir tipos: `t_coder.last_compilation` → `long long`; revisar que todo campo de tiempo sea `long long`.
 - [x] **1.3** Añadir a `t_control` los campos de sincronización (ya aplicado): `pthread_mutex_t mtx_dongles` (protege estado de dongles + topología + `simulation_status`), `pthread_mutex_t mtx_log` (protege la salida), `pthread_cond_t cond_dongles` (despierta a quien espera recursos).
-- [ ] **1.4** Implementar `init_sync(t_control *)` y `destroy_sync(t_control *)` con **cleanup en orden inverso** y solo de lo inicializado (si falla el 2º mutex, destruir el 1º).
+- [ ] **1.4** Implementar `init_sync(t_control *)` y `destroy_sync(t_control *)` con **cleanup en orden inverso** y solo de lo inicializado (si falla el 2º mutex, destruir el 1º). _Iniciado en `main.c`: ya se comprueban resultados y se incluye la condición, pero falta cleanup parcial, retorno de éxito y separación en un módulo de sincronización._
 - [ ] **1.5** Crear `logging.c` con `log_status(t_control *control, int coder_id, const char *msg)`: lock `mtx_log` → `printf("%lld %d %s\n", current_time() - start_time, id, msg)` → unlock. Formatos exactos del subject: `has taken a dongle`, `is compiling`, `is debugging`, `is refactoring`, `burned out`.
 - [ ] **1.6** `main.c`: tras el init estático actual, llamar `init_sync`, hacer una prueba de log manual (1-2 líneas), `destroy_sync`, `free_control`. Salida debe ser una línea por mensaje, sin mezcla.
 - [ ] **1.7** Arreglar el Makefile: añadir `resources.c` (o absorber su función y eliminar el archivo), añadir `logging.c` y el resto de ficheros nuevos de este hito. El binario debe seguir siendo `codexion` con las flags exigidas.
@@ -237,7 +247,7 @@ Los primeros pasos concretos, en orden:
 
 1. ~~Abrir `codexion.h`: defines de estados + `last_compilation` a `long long` (micro 1.1–1.2).~~ **HECHO**
 2. `codexion.h`: campos de sync en `t_control` (micro 1.3).
-3. Nuevo `sync.c`: `init_sync` / `destroy_sync` con cleanup parcial (micro 1.4).
+3. Nuevo `sync.c`: `init_sync` / `destroy_sync` con cleanup parcial (micro 1.4; iniciado, pendiente de corregir).
 4. Nuevo `logging.c`: `log_status` con `mtx_log` (micro 1.5).
 5. `main.c`: init_sync → smoke log → destroy → free (micro 1.6).
 6. Makefile: añadir `sync.c`, `logging.c`, `resources.c` (o eliminarla) (micro 1.7).
