@@ -168,12 +168,25 @@ Responsible for:
 
 ### `compiling.c`
 
-Will contain the compilation workflow executed by each coder thread.
+Holds the workflow executed by each coder thread:
+
+- `block_dongles`: acquires both required dongles atomically, waiting on the
+  condition variable while they are unavailable.
+- `compiling_phase`: logs the compilation, sleeps for `time_to_compile`, then
+  releases both dongles.
+- `debugging_phase` and `refactoring_phase`: log and sleep, touching no shared
+  resource.
+- `coder_routine`: the thread entry point, running the cycle above.
 
 ### `resources.c`
 
-Contains resource-availability helpers. Its logic is still provisional and
-will be replaced or completed when atomic dongle acquisition is implemented.
+Contains the resource-availability helpers:
+
+- `dongle_ready`: a dongle is usable when its state is free and its cooldown
+  timestamp has elapsed.
+- `dongles_available`: both dongles of a pair must be ready, and the pair must
+  not contain the same dongle twice.
+- `log_line`: the serialised log formatter.
 
 ---
 
@@ -457,6 +470,22 @@ The coder must never hold one dongle while waiting for the second one.
 This rule is important because acquiring one resource and waiting for another could create a circular wait and lead to deadlock.
 
 Compilation must happen outside the resource-management mutex. The mutex should protect only the shared dongle state, not the entire compilation period.
+
+### Current state of the protocol
+
+The acquisition half is implemented in `block_dongles`: both dongles are
+checked together inside the critical section, and a `while` loop around
+`pthread_cond_wait` handles the unavailable case. Both dongles are marked as
+in use only after the check succeeds, so no coder ever holds a partial pair.
+
+The release half is implemented in `compiling_phase`: after the compilation
+sleep, a second critical section marks both dongles free and stores their
+cooldown timestamp. The two fields are always written together.
+
+One piece is still missing: released coders do not yet notify waiting coders.
+Until `pthread_cond_broadcast` is added to the release section, a thread that
+sleeps on the condition variable has no one to wake it. This is a known open
+item, not a design decision.
 
 ---
 
@@ -787,14 +816,20 @@ Important constraints include:
 - Serialised logging helper with the exact subject format.
 - The five log messages defined as named constants in `codexion.h`.
 - Message constants hold pure text; the newline is added by the formatter.
+- The coder cycle functions (`compiling_phase`, `debugging_phase`, `refactoring_phase`).
+- Thread entry point with the required `void *f(void *arg)` signature.
+- Coder cycle: compile, debug, refactor, with millisecond-to-microsecond conversion.
+- Atomic acquisition of both dongles, waiting on the condition variable.
+- Release under the dongle mutex, writing state and cooldown timestamp together.
+- Cooldown timestamp measured from the release, not from the acquisition.
 
 ### Still to implement
 
-- Thread creation and joining.
-- Coder cycle: compile, debug, refactor.
-- Atomic acquisition of both dongles.
-- Dongle cooldown enforcement through the condition variable.
+- Thread creation and joining (`run_simulation`).
+- Notification of waiting coders on release (`pthread_cond_broadcast`).
+- The two `has taken a dongle` logs, before `is compiling`.
 - Burnout detection by the monitor thread.
+- Simulation status flag checked by waiting and looping threads.
 - FIFO queue.
 - EDF queue.
 - Complete termination protocol.
@@ -803,7 +838,16 @@ Important constraints include:
 
 ### Open items
 
-- `compiling.c` still holds placeholder functions that pass structures by value. It will be rewritten when the coder thread is implemented.
+- `pthread_cond_broadcast` is absent from the whole codebase. With the
+  condition-variable wait already in place this becomes a hang as soon as
+  threads exist: nobody wakes a sleeping coder. It belongs in the release
+  section, after the state and timestamp writes and before the unlock.
+- `block_dongles` returns `int` but can only return 1, and `compiling_phase`
+  wraps it in a condition that is always true. The function should return
+  `void` and the condition should be removed.
+- No thread has been created yet, so none of the synchronisation logic has
+  been executed at runtime. A clean exit code does not validate concurrency
+  until `run_simulation` exists.
 
 ---
 

@@ -6,9 +6,9 @@
 
 ---
 
-## Estado actual (actualizado tras cerrar el Hito 1)
+## Estado actual (actualizado a mitad del Hito 2)
 
-### Hecho
+### Hecho — cimientos (Hito 1)
 
 - [x] Parsing y validación de los 8 argumentos (`init.c`), con detección de vacíos, ceros, negativos, no numéricos y overflow de `INT_MAX`.
 - [x] Comprobación NULL antes de `arg[0]` en `parse_int`.
@@ -17,30 +17,47 @@
 - [x] Asignación nominal circular de dongles por coder (`dongles.c` → `dongles_assignation`).
 - [x] Helper de tiempo en ms con `gettimeofday` (`simulation.c` → `current_time`).
 - [x] `free_control` en `main.c`.
-- [x] `init_sync` / `destroy_sync` en `sync.c`, con cleanup parcial vía contador de primitivas creadas.
+- [x] `init_sync` / `destroy_sync` en `sync.c`, con cleanup parcial vía contador de primitivas creadas. Extiende a `pthread_cond_init/destroy` sobre el mismo contador.
 - [x] `dongle_ready` + `dongles_available` con predicado correcto (estado `FREE` **y** `current_time >= available_at`) y guard `left_id == right_id`.
 - [x] Makefile: `resources.c` y `sync.c` en `SRC`, `codexion.h` como prerequisito de los `.o`, `.PHONY` completo.
 - [x] `.gitignore` con `*.o` y `/codexion`.
 - [x] `main.c` en Norma y en verde.
 
+### Hecho — ciclo del coder (Hito 2)
+
+- [x] **2.0** Formato de log exacto (`"%d %d %s\n"`) con las cinco constantes en `codexion.h`.
+- [x] **2.1** Campo `pthread_t coder_pthread` en `t_coder`. Su uso llega con 2.6.
+- [x] **2.2** `coder_routine(void *arg)` con firma correcta, cast a `t_coder *`, `return (NULL)` y condición de bucle que lee estado en vivo.
+- [x] **2.3** Fase de compile: log `is compiling` → `usleep(time_to_compile * 1000)` → incremento del contador y `last_compilation` al empezar.
+- [x] **2.4** Fase de debug: log + `usleep`.
+- [x] **2.5** Fase de refactor: log + `usleep` y vuelta inmediata al bucle.
+- [x] Fases separadas en tres funciones; `compiling.c` con 5 funciones (límite Norma).
+- [x] Adquisición delegada en `block_dongles` (`compiling.c`) con `while + pthread_cond_wait` — adelanto del micro-objetivo **3.1**.
+- [x] Dos secciones críticas separadas por el `usleep`: coger / trabajar / devolver.
+- [x] Devolución bajo `mtx_dongles` con `FREE` + `available_at = ahora + cooldown` pareados — adelanto del **3.3**.
+- [x] Prototipos en `codexion.h` incluido `block_dongles` y `cond_dongles` en `t_control`.
+
 ### Verificación actual
 
 - `make re`: sin warnings con `-Wall -Wextra -Werror -pthread`.
 - `norminette`: 9/9 OK.
-- `./codexion 1 800 200 150 100 3 50 fifo` y `./codexion 4 ...`: exit 0, sin salida.
-- **Cero hilos todavía.** No existe ningún `pthread_create` ni `pthread_join`.
+- `./codexion 4 1000 50 30 30 5 100 fifo`: exit 0, sin salida.
+- **Cero hilos todavía.** No existe ningún `pthread_create` ni `pthread_join`: `compiling_phase` y `block_dongles` se compilan pero **no se ejecutan**. Ninguna prueba de concurrencia es válida hasta 2.6.
 
 ### Deuda pendiente
 
-- [ ] `log_line` (`resources.c`) tiene formato incorrecto (`"%dms | coder %d | %s"`). Debe ser `timestamp_in_ms X <estado>` con los cinco formatos exactos del subject. Es el micro-objetivo **2.0**.
-- [ ] `compiling.c` contiene stubs que no compilan la lógica real (`compiling` recibe structs por valor) → se reescribe entero en el Hito 2.
+- [ ] **`pthread_cond_broadcast` no está en ningún sitio del proyecto.** Con la espera ya activa esto es un cuelgue latente: el hilo que se duerme en `block_dongles` no tiene quien lo despierte. Va en el bloque de devolución, después de `FREE + available_at` y antes del `unlock`.
+- [ ] **Código muerto:** `block_dongles` es `int` con `return (1)` inalcanzable por 0, y `compiling_phase` envuelve todo en `if (block_dongles(coder) == 1)`, siempre cierto. Debe pasar a `void` y quitarse el `if`.
+- [ ] `coder_routine` no comprueba `simulation_status` (pendiente con 2.9).
+- [x] ~~`log_line` con formato incorrecto.~~ Cerrado en 2.0.
+- [x] ~~`compiling.c` con stubs que pasan structs por valor.~~ Reescrito entero.
 - [x] ~~`resources.c` no estaba en el Makefile.~~ Corregido.
 - [x] ~~`dongles_available` exigía `available_at != 0`.~~ Corregido con `dongle_ready`.
 - [x] ~~`parse_int` comprobaba `arg[0]` antes que `arg == NULL`.~~ Corregido.
 
-### Falta (todo el núcleo concorrente)
+### Falta (núcleo concorrente por delante)
 
-Hilos, ciclo de vida, logging serializado con formato real, adquisición atómica, cooldown real, colas heap FIFO/EDF, monitor, terminación y protocolo de error.
+Creación y unión de hilos (2.6–2.9), `LOG_TAKEN` ×2 y broadcast en la adquisición (Hito 3), colas heap FIFO/EDF (Hito 4–5), monitor y terminación (Hito 6), estrés y errores (Hito 7).
 
 ---
 
@@ -116,11 +133,11 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 ### Micro-objetivos
 
 - [x] **2.0** Formato de log exacto: `log_line` (`resources.c`) imprime `"%d %d %s\n"` con el tiempo relativo a `start_time` y el mensaje aportado por quien llama. Los cinco estados viven como `#define` en `codexion.h` (`LOG_TAKEN`, `LOG_COMPILING`, `LOG_DEBUGGING`, `LOG_REFACTORING`, `LOG_BURNEDOUT`), de modo que el texto exacto se define en un solo lugar y el salto de línea vive solo en el formateador. El lock `mtx_log` protege el `printf` completo. **Cerrado.**
-- [ ] **2.1** Añadir `pthread_t` a cada `t_coder` (ya está el campo; asegurar uso correcto).
-- [ ] **2.2** Escribir `coder_routine(void *arg)` en `compiling.c` (reescritura completa de los stubs): recibe `t_coder *`, ejecuta el ciclo mientras `simulation_status == SIM_RUNNING` y `number_of_compiles_done < required`.
-- [ ] **2.3** Fase de compile: log `is compiling` (los logs `has taken a dongle` llegarán en el Hito 3) → `usleep(time_to_compile * 1000)` → incrementar `number_of_compiles_done`, actualizar `last_compilation`.
-- [ ] **2.4** Fase de debug: log `is debugging` → `usleep(time_to_debug * 1000)`.
-- [ ] **2.5** Fase de refactor: log `is refactoring` → `usleep(time_to_refactor * 1000)` → volver a intentar compilar de inmediato.
+- [x] **2.1** `pthread_t coder_pthread` en `t_coder`. **Hecho** (campo presente); su uso real llega con `pthread_create` en 2.6.
+- [x] **2.2** `coder_routine(void *arg)` en `compiling.c`, reescribiendo los stubs: recibe `t_coder *`, firma `void *` con `return (NULL)`, y el `while` lee `number_of_compiles_done` en vivo. **Hecho.** La comprobación de `simulation_status` queda pendiente con **2.9**.
+- [x] **2.3** Fase de compile en `compiling_phase`: log `is compiling` (los logs `has taken a dongle` llegarán en el Hito 3) → `usleep(time_to_compile * 1000)` → incrementar `number_of_compiles_done`, actualizar `last_compilation` al inicio. **Hecho**, con la adquisición delegada en `block_dongles`.
+- [x] **2.4** Fase de debug: log `is debugging` → `usleep(time_to_debug * 1000)`. **Hecho.**
+- [x] **2.5** Fase de refactor: log `is refactoring` → `usleep(time_to_refactor * 1000)` → vuelta inmediata al bucle. **Hecho.**
 - [ ] **2.6** `run_simulation(t_control *)`: crea los N hilos, comprueba fallos de `pthread_create` (si el hilo i falla: unir los 0..i-1, parar, limpiar).
 - [ ] **2.7** `main.c`: llamar `run_simulation` tras `init_sync`; `pthread_join` de todos antes de `destroy_sync`/`free_control`.
 - [ ] **2.8** Smoke test: `./codexion 3 1000 50 50 50 2 0 fifo` debe imprimir ciclos de los 3 hilos con timestamps crecientes y terminar por número de compiles alcanzado (aún sin burnout real).
@@ -135,12 +152,26 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 - **Lecturas de configuración sí se pueden congelar.** `compiles_required` es constante durante la simulación, así que copiarlo a una local es inocuo y legible. La diferencia con `number_of_compiles_done` es que este lo cambian las fases. Si se copia uno y no el otro, hay que poder justificarlo en la defensa.
 - **Trampa de unidades en `usleep`.** El subject da milisegundos y `usleep` espera microsegundos: `usleep(time_to_compile * 1000)`.
 
-### Pendiente en 2.1
+### Hallazgos del Hito 2 — concurrencia real
 
-- La firma de `coder_routine` en el archivo sigue siendo `void` y no tiene `return (NULL);`. Falta cambiarla a `void *`.
-- No existen `compiling_phase`, `debugging_phase` ni `refactoring_phase` (error de declaración implícita).
-- Faltan los prototipos en `codexion.h`.
-- Siguen ahí los stubs `compile_previous` y `compiling`, que pasan structs por valor.
+- **"Fase" y "sección crítica" no son lo mismo.** Una *fase* es un paso del algoritmo (coger / trabajar / devolver). Una *sección crítica* va de un `pthread_mutex_lock` a su `pthread_mutex_unlock`. Los límites del lock no existen en el lenguaje: no hay llaves de C que los marcan, solo tu código. El patrón del proyecto es **sección crítica corta → trabajo largo sin llave → sección crítica corta**.
+- **`return` dentro de la sección crítica es un cuelgue.** Primer intento de `block_dongles`: los dos `return` salían de la función con `mtx_dongles` puesto; el `unlock` final quedaba como código muerto tras un `else`. Resultado: la primera llamada deja el mutex tomado para siempre y el siguiente hilo se duerme en el `lock`.
+- **`log_line` ya bloquea `mtx_log` por dentro.** Un `pthread_mutex_lock(&mtx_log)` manual alrededor de la llamada es un doble lock desde el mismo hilo → auto-cuelgue inmediato. Y anidado dentro de `mtx_dongles`, además dos llaves sin motivo. El log va **fuera** de la sección crítica de dongles.
+- **La condición se invierte cuando cambia de signo el objetivo.** `dongles_available` devuelve 1 si se puede coger. El `while (disponible == 0)` pregunta "mientras NO se pueda"; el `if (disponible == 1)` anterior preguntaba lo contrario. Un signo mal puesto hace que se cojan los dongles cuando están ocupados.
+- **La devolución solo existe si hubo cogida.** Primer intento con guardia: el bloque 2 se ejecutaba también en el camino de fallo, y escribía `FREE` sobre dongles que otro hilo tenía en uso → liberación ajena. La fase de devolución está condicionada a haber cogido.
+- **El cooldown cuenta desde la devolución, no desde la cogida.** Si se marca `available_at = ahora + cooldown` al coger y se compila 200 ms con un cooldown de 50 ms, al devolver el enfriamiento ya expiró. El cooldown es una fecha futura que se escribe al soltar.
+- **`state_dongle` y `available_at` son una sola cosa.** Se escriben juntos bajo `mtx_dongles`. Separados, un hilo puede observar `FREE` con un `available_at` viejo y coger un dongle que aún está enfriando.
+- **`cond_wait` y `pthread_cond_broadcast` son pareja.** La condición es una sala de espera: `cond_wait` duerme y **suelta la llave** mientras tanto; `broadcast` suena el timbre. Sin broadcast, el que se duerme no se levanta nunca. Sin cond_wait, no hay a quién despertar.
+- **`while`, no `if`, alrededor del `cond_wait`.** El SO puede despertar de forma espuria, y el broadcast despierta a todos: el que no pueda coger debe volver a dormirse. Releer la condición es la garantía.
+- **El broadcast va dentro del lock, después del cambio de estado.** Si suena antes de escribir el `FREE`, el despertado comprueba y ve que nada cambió → se duerme otra vez y ya nadie vuelve a sonar. El estado debe ser visible cuando suene el timbre.
+- **Norma: 25 líneas por función y 5 funciones por archivo.** La fase de compile con cogida, log, contadores y devolución dentro se pasaba de 25. La solución fue extraer la adquisición a `block_dongles`, que lleva `compiling.c` a 5 de 5: el sitio se ha acabado, cualquier función nueva del ciclo tiene que vivir en otro fichero.
+- **`n == 1` con la condición activa duerme para siempre, y es correcto.** El guard `left_id == right_id` devuelve "no disponible" y el coder queda en `cond_wait` sin que nadie lo despierte. No es un bug: es el camino de burnout que remata el monitor en el Hito 6. Mientras tanto, `./codexion 1 ...` se colgará en el `pthread_join`.
+
+### Pendiente antes de dar por cerrada la adquisición (adelantada del Hito 3)
+
+- [ ] Añadir `pthread_cond_broadcast(&cond_dongles)` en el bloque de devolución, bajo `mtx_dongles`, después de `FREE + available_at`.
+- [ ] `block_dongles` a `void` y borrar el `if (block_dongles(coder) == 1)` muerto de `compiling_phase`.
+- [ ] Los dos `LOG_TAKEN` al coger, antes del `LOG_COMPILING` (orden de `Codexion.md:365`).
 
 ### Criterios de aceptación del Hito 2
 
@@ -154,6 +185,8 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 ## HITO 3 — Adquisición atómica de dongles + cooldown
 
 **Objetivo:** el corazón del proyecto. Nadie compila sin dos dongles; nadie retiene uno esperando el segundo (anti-deadlock); el cooldown se respeta sin `usleep` bajo mutex.
+
+> **Estado adelantado (mitad del Hito 2):** 3.1 está **parcialmente** hecho — `block_dongles` comprueba ambos dongles y espera con `pthread_cond_wait` en un `while`. 3.3 también a medias — la devolución escribe `FREE + available_at` bajo la llave, pero **falta el `broadcast`**. 3.6 está hecho (`dongles_available` reescrita con `dongle_ready` + guard). Quedan: `LOG_TAKEN` ×2, broadcast, y decidir si se usa el estado `DONGLE_COOLDOWN` o solo `available_at` (ver 3.3).
 
 ### Micro-objetivos
 
@@ -282,21 +315,18 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 
 ---
 
-## Próximo paso: **HITO 2**
+## Próximo paso: **cerrar 2.1 y pasar a 2.6**
 
-Hito 1 cerrado y commiteado. El orden del Hito 2:
+Hito 1 cerrado y commiteado. Hito 2 a medias: 2.0–2.5 hechos, 2.6–2.9 sin empezar.
 
-1. ~~**2.0** Reescribir `log_line` con el formato exacto del subject.~~ **HECHO**
-2. **2.1–2.5** `coder_routine` en `compiling.c`: el ciclo compilar → depurar → refactorizar con `usleep(time * 1000)`. **Trampa:** los tiempos del subject están en ms y `usleep` espera en µs.
-3. **2.6–2.7** `run_simulation` con contador de hilos creados (mismo patrón que `init_sync`) y `pthread_join` de todos antes de destruir nada.
-4. **2.8** Smoke test con 3 hilos.
-5. **2.9** Flag de parada `simulation_status` thread-safe.
+Orden recomendado:
 
-Sin dongles reales todavía. La adquisición atómica es el Hito 3.
+1. **Cerrar la adquisición adelantada** (tres puntos, ver "Pendiente antes de dar por cerrada la adquisición"): `block_dongles` a `void` y borrar el `if` muerto; `broadcast` en el bloque de devolución; y decidir si los `LOG_TAKEN` se añaden ahora o en el Hito 3.
+2. **2.6–2.7** `run_simulation` con contador de hilos creados (mismo patrón que `init_sync`) y `pthread_join` de todos antes de destruir nada. **Es aquí donde la concurrencia empieza a ejecutarse de verdad**: hasta ahora todo se compila pero nada corre.
+3. **2.8** Smoke test con 3 hilos — primera observación real de los logs serializados.
+4. **2.9** Flag `simulation_status` thread-safe y su comprobación en `coder_routine`.
 
-El guard de `left_id == right_id` ya está escrito y verificado; se quedará dormido hasta el Hito 3.
-
-Cuando el Hito 2 esté cerrado, actualizar los checkboxes de este archivo y pasar al Hito 3.
+Advertencia de prueba: con el `broadcast` aún ausente, 2.6 **colgará** con cualquier n > 1 (los que esperan en `cond_wait` no se despiertan). `./codexion 1 ...` se colgará aunque el broadcast exista: es el burnout en espera del Hito 6. No confundir un hang esperado con un bug.
 
 ---
 

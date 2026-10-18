@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/18 18:33:18 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/18 23:45:26 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -99,6 +99,10 @@ int			dongle_ready(t_dongle *dongle);
 void		log_line(t_control *control, const char *message, int id);
 
 /* COMPILING.C */
+int			block_dongles(t_coder *coder);
+void		compiling_phase(t_coder *coder);
+void		debugging_phase(t_coder *coder);
+void		refactoring_phase(t_coder *coder);
 void		*coder_routine(void *arg);
 
 #endif
