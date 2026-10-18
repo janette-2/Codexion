@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/16 20:35:45 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/18 18:33:18 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,6 +23,12 @@
 # define DONGLE_BLOCKED 0
 # define DONGLE_FREE 1
 # define DONGLE_COOLDOWN 2
+
+# define LOG_TAKEN "has taken a dongle"
+# define LOG_COMPILING "is compiling"
+# define LOG_DEBUGGING "is debugging"
+# define LOG_REFACTORING "is refactoring"
+# define LOG_BURNEDOUT "burned out"
 
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
@@ -91,5 +97,8 @@ void		destroy_sync(t_control *control, int created);
 int			dongles_available(t_control *control, int left_id, int right_id);
 int			dongle_ready(t_dongle *dongle);
 void		log_line(t_control *control, const char *message, int id);
+
+/* COMPILING.C */
+void		*coder_routine(void *arg);
 
 #endif

@@ -38,6 +38,6 @@ void	log_line(t_control *control, const char *message, int id)
 
 	elapsed = (int)(current_time() - control->start_time);
 	pthread_mutex_lock(&(control->mtx_log));
-	printf("%d ms | coder %d | %s\n", elapsed, id, message);
+	printf("%d %d %s\n", elapsed, id, message);
 	pthread_mutex_unlock(&(control->mtx_log));
 }

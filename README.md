@@ -643,9 +643,7 @@ Critical sections should remain as short as possible.
 
 Output must be serialised so that messages from different threads do not overlap.
 
-A dedicated output mutex will protect logging operations.
-
-The intended rule is:
+`mtx_log` protects logging operations. The rule is:
 
 ```text
 1. Lock the output mutex.
@@ -653,7 +651,31 @@ The intended rule is:
 3. Unlock the output mutex.
 ```
 
-The output mutex should be separate from the dongle-management mutex to avoid unnecessary contention.
+The output mutex is separate from the dongle-management mutex to avoid unnecessary contention.
+
+The elapsed time is computed before the lock is taken. The lock only has to
+protect the shared output stream, not the clock.
+
+### Log format
+
+The subject requires exactly five state messages:
+
+```text
+timestamp_in_ms X has taken a dongle
+timestamp_in_ms X is compiling
+timestamp_in_ms X is debugging
+timestamp_in_ms X is refactoring
+timestamp_in_ms X burned out
+```
+
+The message text is held as named constants in `codexion.h`, so the exact
+wording is defined in one place. `log_line` only formats and serialises; it
+does not decide which state is being reported.
+
+The caller decides the message. A coder thread logs its own phases, and the
+monitor logs the burnout. The same helper serves every caller.
+
+The newline belongs to the formatter, not to the message constants.
 
 ---
 
@@ -759,31 +781,29 @@ Important constraints include:
 - Dongle readiness check: state plus cooldown timestamp evaluated together.
 - Refusal to treat one dongle as two resources (`left_id == right_id`).
 - Millisecond clock helper (`simulation.c`).
-
-### In progress
-
-- A temporary availability smoke test in `main.c`. It is a debugging aid only,
-  it prints a raw number, and it must be removed before the final commit.
+- Makefile header dependency tracking.
+- Object files and binary excluded from version control.
+- Norminette compliance across all source files.
+- Serialised logging helper with the exact subject format.
+- The five log messages defined as named constants in `codexion.h`.
+- Message constants hold pure text; the newline is added by the formatter.
 
 ### Still to implement
 
 - Thread creation and joining.
+- Coder cycle: compile, debug, refactor.
 - Atomic acquisition of both dongles.
 - Dongle cooldown enforcement through the condition variable.
 - Burnout detection by the monitor thread.
-- Serialised logging with the five exact subject formats.
 - FIFO queue.
 - EDF queue.
 - Complete termination protocol.
 - Full error cleanup for thread creation.
-- Makefile header dependency tracking.
 - Final testing with ThreadSanitizer and stress cases.
 
 ### Open items
 
-- `main.c` does not currently satisfy Norminette.
-- The `.gitignore` does not exclude object files or the binary.
-- The Makefile does not rebuild when `codexion.h` changes.
+- `compiling.c` still holds placeholder functions that pass structures by value. It will be rewritten when the coder thread is implemented.
 
 ---
 

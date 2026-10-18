@@ -6,39 +6,41 @@
 
 ---
 
-## Estado actual (punto de partida)
+## Estado actual (actualizado tras cerrar el Hito 1)
 
 ### Hecho
 
 - [x] Parsing y validación de los 8 argumentos (`init.c`), con detección de vacíos, ceros, negativos, no numéricos y overflow de `INT_MAX`.
+- [x] Comprobación NULL antes de `arg[0]` en `parse_int`.
 - [x] Allocación e inicialización del array de coders (`coders.c`).
 - [x] Allocación e inicialización del array de dongles (`dongles.c`).
 - [x] Asignación nominal circular de dongles por coder (`dongles.c` → `dongles_assignation`).
 - [x] Helper de tiempo en ms con `gettimeofday` (`simulation.c` → `current_time`).
 - [x] `free_control` en `main.c`.
+- [x] `init_sync` / `destroy_sync` en `sync.c`, con cleanup parcial vía contador de primitivas creadas.
+- [x] `dongle_ready` + `dongles_available` con predicado correcto (estado `FREE` **y** `current_time >= available_at`) y guard `left_id == right_id`.
+- [x] Makefile: `resources.c` y `sync.c` en `SRC`, `codexion.h` como prerequisito de los `.o`, `.PHONY` completo.
+- [x] `.gitignore` con `*.o` y `/codexion`.
+- [x] `main.c` en Norma y en verde.
 
-### Trabajo reciente revisado
+### Verificación actual
 
-- [ ] Se ha iniciado la inicialización y destrucción de `mtx_dongles`,
-  `mtx_log` y `cond_dongles` en `main.c`.
-- [ ] El ciclo de vida de los hilos todavía no está implementado: aún no hay
-  `pthread_create` ni `pthread_join`.
-- [ ] La inicialización de sincronización todavía debe devolver siempre un
-  resultado válido y limpiar únicamente los objetos que hayan llegado a
-  inicializarse.
+- `make re`: sin warnings con `-Wall -Wextra -Werror -pthread`.
+- `norminette`: 9/9 OK.
+- `./codexion 1 800 200 150 100 3 50 fifo` y `./codexion 4 ...`: exit 0, sin salida.
+- **Cero hilos todavía.** No existe ningún `pthread_create` ni `pthread_join`.
 
-### Deuda detectada (corregir en el Hito 1)
+### Deuda pendiente
 
-- [ ] `resources.c` **no está en el Makefile** (SRC) — se compila a medias o nada.
-- [x] `last_compilation` es `int` en `t_coder`; debe ser `long long` (timestamp en ms).
-- [ ] `dongles_available` en `resources.c` es incorrecto: exige `available_at != 0`, pero un dongle libre recién creado tiene `available_at = 0` → siempre devuelve "no disponible".
-- [ ] `parse_int` comprueba `arg[0] == '\0'` **antes** de validar `arg == NULL` (riesgo de UB si algún día se llama con NULL).
-- [ ] `compiling.c` contiene stubs que no compilan la lógica real (`compiling` recibe structs por valor) → se reescribe entero.
-- [x] `dongles_args` / estados con números mágicos (`0/1/2`) → pasar a defines normativos.
+- [ ] `log_line` (`resources.c`) tiene formato incorrecto (`"%dms | coder %d | %s"`). Debe ser `timestamp_in_ms X <estado>` con los cinco formatos exactos del subject. Es el micro-objetivo **2.0**.
+- [ ] `compiling.c` contiene stubs que no compilan la lógica real (`compiling` recibe structs por valor) → se reescribe entero en el Hito 2.
+- [x] ~~`resources.c` no estaba en el Makefile.~~ Corregido.
+- [x] ~~`dongles_available` exigía `available_at != 0`.~~ Corregido con `dongle_ready`.
+- [x] ~~`parse_int` comprobaba `arg[0]` antes que `arg == NULL`.~~ Corregido.
 
 ### Falta (todo el núcleo concorrente)
 
-Hilos, mutexes, condvars, logging serializado, adquisición atómica, cooldown real, colas heap FIFO/EDF, monitor, terminación y protocolo de error.
+Hilos, ciclo de vida, logging serializado con formato real, adquisición atómica, cooldown real, colas heap FIFO/EDF, monitor, terminación y protocolo de error.
 
 ---
 
@@ -69,12 +71,16 @@ Hilos, mutexes, condvars, logging serializado, adquisición atómica, cooldown r
 - [x] **1.2** Corregir tipos: `t_coder.last_compilation` → `long long`; revisar que todo campo de tiempo sea `long long`.
 - [x] **1.3** Añadir a `t_control` los campos de sincronización (ya aplicado): `pthread_mutex_t mtx_dongles` (protege estado de dongles + topología + `simulation_status`), `pthread_mutex_t mtx_log` (protege la salida), `pthread_cond_t cond_dongles` (despierta a quien espera recursos).
 - [x] **1.4** Implementar `init_sync(t_control *)` y `destroy_sync(t_control *, int created)` con **cleanup en orden inverso** y solo de lo inicializado (si falla el 2º mutex, destruir el 1º). **HECHO** en `sync.c`: devuelve 1/2/3 indicando qué primitiva falló y destruye ella misma lo creado antes de salir. El patrón del contador `created` es el que se reutilizará en el `pthread_create` parcial.
-- [ ] **1.5** Logging con formato exacto del subject: `log_line` existe en `resources.c` con lock `mtx_log`, **pero el formato es `"%dms | coder %d | %s"` y es INCORRECTO**. Debe ser `timestamp_in_ms X <estado>` con los cinco estados exactos (`has taken a dongle`, `is compiling`, `is debugging`, `is refactoring`, `burned out`). Pendiente hasta que haya estados reales que reportar.
-- [x] **1.6** `main.c`: `init_sync` → smoke test → `destroy_sync` → `free_control`. El smoke test de log se añadió y se retiró (ruido); ahora es un test de disponibilidad temporal. Falta retirarlo antes del commit.
-- [x] **1.7** Makefile: `resources.c` y `sync.c` añadidos a `SRC`. **Pendiente menor:** añadir `codexion.h` como prerequisito de los `.o` (hoy, tocar el header no recompila nada) y `.PHONY: all`.
-- [x] **1.8** `dongles_available` corregido: el predicado era `state == FREE && available_at` (todo timestamp no nulo contaba como disponible). Ahora es `dongle_ready()` = estado `FREE` **y** `current_time() >= available_at`.
-- [ ] **1.9** Corregir el orden de comprobación NULL/dígito en `parse_int`.
-- [ ] **1.10** `norminette`: 8/9 ficheros en verde. **`main.c` tiene 9 errores**: línea vacía en función, declaración no al inicio, `//` fuera de scope, espacio en vez de tab, declaración con asignación en la misma línea, y función de más de 25 líneas. El bucle del smoke test debe salir de `main` a su propia función/archivo.
+- [ ] **1.5** Logging con formato exacto del subject: `log_line` existe en `resources.c` con lock `mtx_log`, **pero el formato es `"%dms | coder %d | %s"` y es INCORRECTO**. Debe ser `timestamp_in_ms X <estado>` con los cinco estados exactos (`has taken a dongle`, `is compiling`, `is debugging`, `is refactoring`, `burned out`). **Se movió al Hito 2 como micro-objetivo 2.0**: hasta ahora no había estados reales que reportar.
+- [x] **1.6** `main.c`: `init_sync` → smoke test → `destroy_sync` → `free_control`. El smoke test de log se añadió y se retiró; el de disponibilidad también se retiró. **Cerrado.**
+- [x] **1.7** Makefile: `resources.c` y `sync.c` en `SRC`, `codexion.h` como prerequisito de los `.o` y `.PHONY: all` añadido. **Cerrado.**
+- [x] **1.8** `dongles_available` corregido: el predicado era `state == FREE && available_at` (todo timestamp no nulo contaba como disponible). Ahora es `dongle_ready()` = estado `FREE` **y** `current_time() >= available_at`. Más el guard `left_id == right_id`. **Cerrado.**
+- [x] **1.9** Orden de comprobación NULL/dígito en `parse_int`. **Cerrado.**
+- [x] **1.10** `norminette` en verde 9/9. El bucle del smoke test se eliminó de `main`. **Cerrado.**
+
+### HITO 1 — CERRADO
+
+Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n == 4`. Pendiente único: el formato de log, movido al 2.0.
 
 ### Criterios de aceptación del Hito 1
 
@@ -109,6 +115,7 @@ Hilos, mutexes, condvars, logging serializado, adquisición atómica, cooldown r
 
 ### Micro-objetivos
 
+- [x] **2.0** Formato de log exacto: `log_line` (`resources.c`) imprime `"%d %d %s\n"` con el tiempo relativo a `start_time` y el mensaje aportado por quien llama. Los cinco estados viven como `#define` en `codexion.h` (`LOG_TAKEN`, `LOG_COMPILING`, `LOG_DEBUGGING`, `LOG_REFACTORING`, `LOG_BURNEDOUT`), de modo que el texto exacto se define en un solo lugar y el salto de línea vive solo en el formateador. El lock `mtx_log` protege el `printf` completo. **Cerrado.**
 - [ ] **2.1** Añadir `pthread_t` a cada `t_coder` (ya está el campo; asegurar uso correcto).
 - [ ] **2.2** Escribir `coder_routine(void *arg)` en `compiling.c` (reescritura completa de los stubs): recibe `t_coder *`, ejecuta el ciclo mientras `simulation_status == SIM_RUNNING` y `number_of_compiles_done < required`.
 - [ ] **2.3** Fase de compile: log `is compiling` (los logs `has taken a dongle` llegarán en el Hito 3) → `usleep(time_to_compile * 1000)` → incrementar `number_of_compiles_done`, actualizar `last_compilation`.
@@ -118,6 +125,22 @@ Hilos, mutexes, condvars, logging serializado, adquisición atómica, cooldown r
 - [ ] **2.7** `main.c`: llamar `run_simulation` tras `init_sync`; `pthread_join` de todos antes de `destroy_sync`/`free_control`.
 - [ ] **2.8** Smoke test: `./codexion 3 1000 50 50 50 2 0 fifo` debe imprimir ciclos de los 3 hilos con timestamps crecientes y terminar por número de compiles alcanzado (aún sin burnout real).
 - [ ] **2.9** Añadir flag `stop`/`simulation_status = SIM_STOPPED` accesible de forma thread-safe para cortar bucles (aunque el monitor real llegue en el Hito 6).
+
+### Hallazgos del Hito 2
+
+- **Firma obligatoria de la rutina de hilo.** `pthread_create` solo acepta funciones con firma exacta `void *f(void *arg)`. No admite dos parámetros y no admite retorno `void`. Todo lo que la rutina necesita tiene que colgar de un único puntero de contexto: aquí, el `t_coder *`, que ya lleva `control`, `id` y los dongles.
+- **`void *` es dirección sin tipo; la conversión es cosa nuestra.** El hilo recibe `void *`, que solo guarda una dirección. El cast `(t_coder *)arg` le dice al compilador qué hay en esa dirección. `pthread_create` no convierte nada por nosotros.
+- **Puntero frente a copia.** `t_coder coder` crea una copia del struct en la pila; `t_coder *coder` apunta al struct original. Con copia, `number_of_compiles_done++` ocurre en la copia y el contador real nunca se mueve. Regla para la defensa: si quitas el `*` y el programa compila igual, acabas de encontrar un bug de copia silencioso.
+- **No congelar el estado en la condición del bucle.** Primer intento: `compiles_done = coder->number_of_compiles_done;` antes del `while`, y comparar contra esa variable local. Las fases incrementan el campo del struct, la local queda a 0 y el bucle nunca sale. La condición debe leer el estado en vivo: `coder->number_of_compiles_done < ...`.
+- **Lecturas de configuración sí se pueden congelar.** `compiles_required` es constante durante la simulación, así que copiarlo a una local es inocuo y legible. La diferencia con `number_of_compiles_done` es que este lo cambian las fases. Si se copia uno y no el otro, hay que poder justificarlo en la defensa.
+- **Trampa de unidades en `usleep`.** El subject da milisegundos y `usleep` espera microsegundos: `usleep(time_to_compile * 1000)`.
+
+### Pendiente en 2.1
+
+- La firma de `coder_routine` en el archivo sigue siendo `void` y no tiene `return (NULL);`. Falta cambiarla a `void *`.
+- No existen `compiling_phase`, `debugging_phase` ni `refactoring_phase` (error de declaración implícita).
+- Faltan los prototipos en `codexion.h`.
+- Siguen ahí los stubs `compile_previous` y `compiling`, que pasan structs por valor.
 
 ### Criterios de aceptación del Hito 2
 
@@ -259,22 +282,21 @@ Hilos, mutexes, condvars, logging serializado, adquisición atómica, cooldown r
 
 ---
 
-## Próximo paso: cierre del **HITO 1**
+## Próximo paso: **HITO 2**
 
-Lo que queda, en orden:
+Hito 1 cerrado y commiteado. El orden del Hito 2:
 
-1. **1.10** `norminette` en `main.c`: subir la declaración de `i` al inicio de la función, quitar las líneas vacías, cambiar el `//` por un comentario normativo, y **sacar el bucle del smoke test a su propia función en otro archivo** (por eso `main` pasa de 25 líneas).
-2. Retirar el smoke test temporal de `main` (o dejarlo explícitamente como debugger y no commitearlo).
-3. **1.9** `parse_int`: comprobar `arg == NULL` antes de acceder a `arg[0]`.
-4. Makefile: `codexion.h` como prerequisito de los `.o`, y `.PHONY: all`.
-5. `.gitignore`: añadir `*.o` y `/codexion`.
-6. Commit del Hito 1.
+1. ~~**2.0** Reescribir `log_line` con el formato exacto del subject.~~ **HECHO**
+2. **2.1–2.5** `coder_routine` en `compiling.c`: el ciclo compilar → depurar → refactorizar con `usleep(time * 1000)`. **Trampa:** los tiempos del subject están en ms y `usleep` espera en µs.
+3. **2.6–2.7** `run_simulation` con contador de hilos creados (mismo patrón que `init_sync`) y `pthread_join` de todos antes de destruir nada.
+4. **2.8** Smoke test con 3 hilos.
+5. **2.9** Flag de parada `simulation_status` thread-safe.
 
-**Siguiente hito: HITO 2** — hilos de coders. El primer paso es `coder_routine` en `compiling.c` y el bucle de creación con contador de hilos creados, reutilizando el patrón de `init_sync`. Sin dongles reales todavía: solo el ciclo compilar → depurar → refactorizar.
+Sin dongles reales todavía. La adquisición atómica es el Hito 3.
 
-El guard de `left_id == right_id` ya está escrito y verificado a mano con `n == 1` y `n == 4`; se quedará dormido hasta el Hito 3, cuando el bucle de adquisición lo invoque de verdad.
+El guard de `left_id == right_id` ya está escrito y verificado; se quedará dormido hasta el Hito 3.
 
-Cuando el Hito 1 esté cerrado, actualizar los checkboxes de este archivo y pasar al Hito 2.
+Cuando el Hito 2 esté cerrado, actualizar los checkboxes de este archivo y pasar al Hito 3.
 
 ---
 
