@@ -1,2 +1,4 @@
 Norma - 42.pdf
 Codexion.md
+*.o
+/codexion

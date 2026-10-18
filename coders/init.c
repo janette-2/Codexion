@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/12 18:53:09 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 16:22:39 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/18 13:51:50 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,7 +21,7 @@ int	parse_int(char *arg)
 	int	i;
 
 	i = 0;
-	if (arg[0] == '\0' || arg == NULL)
+	if (arg == NULL || arg[0] == '\0')
 		return (-4);
 	if (arg[0] == '-')
 		return (-1);
@@ -43,7 +43,7 @@ int	parse_int(char *arg)
 
 int	print_error_args(void)
 {
-	printf("Error.\nThe expected 8 arguments are:\n"
+	printf("Error.  The expected 8 arguments are:\n"
 		"<number_of_coders> <time_to_burnout> <time_to_compile>\n"
 		"<time_to_debug> <time_to_refactor> <number_of_compiles_required>\n"
 		"<dongle_cooldown> <scheduler>\n");

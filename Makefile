@@ -18,7 +18,7 @@ all: $(NAME)
 $(NAME): $(OBJ)
 	$(CC) $(FLAGS) $(OBJ) -o $(NAME)
 
-%.o:%.c
+%.o:%.c coders/codexion.h
 	$(CC) $(FLAGS) -c $< -o $@
 
 clean:
@@ -30,4 +30,4 @@ fclean: clean
 re:
 	fclean all
 
-.PHONY: clean fclean re
+.PHONY: clean fclean re all

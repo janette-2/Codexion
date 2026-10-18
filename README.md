@@ -115,8 +115,13 @@ coders/
 ├── coders.c
 ├── dongles.c
 ├── resources.c
-└── compiling.c
+├── compiling.c
+├── simulation.c
+└── sync.c
 ```
+
+`sync.c` holds the initialisation and destruction of the synchronisation
+primitives. `simulation.c` holds the clock helper.
 
 ### `codexion.h`
 
@@ -374,12 +379,32 @@ However, a coder normally needs two different dongles to compile. Therefore, one
 
 This case is not rejected during argument validation. It is considered a valid configuration that cannot complete compilation and must eventually terminate through burnout.
 
+The subject does not describe a special case for it. It only states that one person means one dongle on the table, and that the simulation stops when someone burns out. Therefore the configuration is handled by the ordinary termination mechanism, not by argument validation.
+
 The program must not:
 
 - Use the same dongle twice as if it were two resources.
 - Lock the same mutex twice from the same thread.
 - Pretend that one dongle satisfies the two-dongle requirement.
 - Enter an infinite waiting state.
+
+### Where the protection lives
+
+The nominal assignment keeps `left_dongle == right_dongle` for the single
+coder. The invalid pair is refused at the point of use, inside
+`dongles_available`, before any state is inspected. This keeps the invariant
+in one place instead of special-casing the topology.
+
+A mutex cannot enforce this restriction. Locking a mutex twice from the same
+thread does not fail, it deadlocks silently. The refusal is a predicate
+evaluated inside the critical section, not a property of the lock.
+
+The refusal is permanent rather than a retry. A coder that holds no pair must
+wait for termination instead of spinning, otherwise it burns CPU while the
+burnout never arrives.
+
+Burnout is detected by the monitor thread, as the subject requires. A coder
+that cannot compile never declares its own burnout.
 
 ---
 
@@ -547,7 +572,8 @@ The queue and its ordering must be protected from concurrent access.
 
 ## Monitor
 
-A monitor thread will check the simulation state periodically.
+The subject requires a separate monitor thread that detects burnout with
+precision and stops the simulation.
 
 It will verify whether:
 
@@ -556,22 +582,34 @@ It will verify whether:
 - Every coder has completed the required number of compilations.
 - A fatal error has occurred.
 
+The burnout message must be printed within 10 ms of the real burnout moment,
+which bounds how often the monitor may poll.
+
 The monitor must not inspect mutable coder or dongle state without synchronisation.
 
-When the simulation ends, the monitor will update the shared simulation status and notify waiting threads.
+When the simulation ends, the monitor will update the shared simulation status and notify waiting threads with `pthread_cond_broadcast`.
+
+The monitor is mandatory for every configuration, including the single coder,
+which never starts compiling and can only terminate through burnout.
 
 ---
 
 ## Synchronisation
 
-The project will use mutexes and condition variables to protect shared state.
+The project uses mutexes and condition variables to protect shared state.
 
-The current `t_control` declaration contains the first synchronization
-objects, but their initialization and destruction are still being completed.
-`mtx_dongles` is intended for shared resource-management state, `mtx_log` for
-serialized output, and `cond_dongles` for waiting coders. The condition
-variable must be initialized before any thread can wait on it and destroyed
-only after all waiting threads have finished.
+`mtx_dongles` protects the dongle state array: both `state_dongle` and
+`available_at` are read and written together, never separately. `mtx_log`
+protects output. `cond_dongles` wakes coders waiting for resources.
+
+Initialisation and destruction live in `sync.c`. Initialisation reports which
+primitive failed, and destruction only destroys what was successfully created,
+using a count of created primitives.
+
+The pending design decision is which mutex protects the per-coder counters
+`number_of_compiles_done` and `last_compilation`. Reusing `mtx_dongles` adds
+no primitives but makes the monitor contend with acquisition. A dedicated
+mutex reduces contention but introduces a lock ordering that must be proved.
 
 Mutexes will protect:
 
@@ -715,24 +753,37 @@ Important constraints include:
 - Coder initialisation.
 - Dongle initialisation.
 - Basic cleanup of allocated arrays.
-- Special handling of the one-coder configuration at the architectural level.
+- Nominal dongle assignment (circular topology).
+- Synchronisation primitives initialisation and destruction (`sync.c`).
+- Partial-cleanup discipline for synchronisation initialisation.
+- Dongle readiness check: state plus cooldown timestamp evaluated together.
+- Refusal to treat one dongle as two resources (`left_id == right_id`).
+- Millisecond clock helper (`simulation.c`).
+
+### In progress
+
+- A temporary availability smoke test in `main.c`. It is a debugging aid only,
+  it prints a raw number, and it must be removed before the final commit.
 
 ### Still to implement
 
-- Nominal dongle assignment.
-- Thread creation.
-- Thread joining.
-- Mutex initialisation and destruction.
-- Condition variables.
+- Thread creation and joining.
 - Atomic acquisition of both dongles.
-- Dongle cooldown management.
+- Dongle cooldown enforcement through the condition variable.
+- Burnout detection by the monitor thread.
+- Serialised logging with the five exact subject formats.
 - FIFO queue.
 - EDF queue.
-- Monitor thread.
-- Serialised logging.
 - Complete termination protocol.
-- Full error cleanup for thread and synchronisation initialisation.
+- Full error cleanup for thread creation.
+- Makefile header dependency tracking.
 - Final testing with ThreadSanitizer and stress cases.
+
+### Open items
+
+- `main.c` does not currently satisfy Norminette.
+- The `.gitignore` does not exclude object files or the binary.
+- The Makefile does not rebuild when `codexion.h` changes.
 
 ---
 

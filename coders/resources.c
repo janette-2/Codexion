@@ -23,6 +23,8 @@ int	dongle_ready(t_dongle *dongle)
 
 int	dongles_available(t_control *control, int left_id, int right_id)
 {
+	if (left_id == right_id)
+		return (0);
 	if (!dongle_ready(&(control->dongles[left_id - 1])))
 		return (0);
 	if (!dongle_ready(&(control->dongles[right_id - 1])))
