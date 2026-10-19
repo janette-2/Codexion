@@ -2,7 +2,8 @@
 
 > Diagramas del ciclo del coder y de la sincronización. Se renderizan como dibujo
 > en GitHub, GitLab y VS Code (con extensión de Mermaid).
-> Estado: adquisición de dongles cerrada; hilos aún sin crear (2.6 pendiente).
+> Estado: hilos creados, unidos y corriendo (2.6/2.7 cerrados); adquisición
+> cerrada. Falta el timbre del cooldown (3.4): el cuelgue real está en la sección 6.
 
 ---
 
@@ -94,7 +95,12 @@ nadie volvería a sonar.
 
 ---
 
-## 5. Línea temporal — dos coders (cooldown 0)
+## 5. Línea temporal — dos coders (esquema, cooldown no observable)
+
+> Esquema conceptual de la coreografía correcta. Ojo: el parser **rechaza el 0**,
+> así que no existe una ejecución real con `dongle_cooldown = 0`; y con cooldown
+> > 0 el programa se cuelga hoy (3.4, sección 6). Es el mundo *después* de
+> cerrar 3.4.
 
 ```mermaid
 gantt

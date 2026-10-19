@@ -121,7 +121,7 @@ coders/
 ```
 
 `sync.c` holds the initialisation and destruction of the synchronisation
-primitives. `simulation.c` holds the clock helper.
+primitives. `simulation.c` holds the clock helpers.
 
 ### `codexion.h`
 
@@ -136,11 +136,14 @@ Contains:
 
 Responsible for:
 
-- Creating the main control structure.
-- Initialising pointers to `NULL`.
+- Creating the main control structure on the stack.
+- Initialising its dynamic pointers to `NULL`.
 - Validating program arguments.
-- Allocating the coder and dongle arrays.
-- Releasing allocated memory before termination.
+- Delegating the coder and dongle arrays to `init_coders` / `init_dongles`.
+- Applying the nominal dongle topology (`dongles_assignation`).
+- Taking the simulation start timestamp.
+- Orchestrating the lifecycle: `init_sync` → `run_simulation` → `destroy_sync`.
+- Releasing allocated memory with `free_control` on every exit path.
 
 ### `init.c`
 
@@ -148,7 +151,7 @@ Responsible for:
 
 - Parsing and validating command-line arguments.
 - Converting valid arguments into integer values.
-- Initialising the global control structure.
+- Storing the validated values in the control structure.
 
 ### `coders.c`
 
@@ -157,6 +160,9 @@ Responsible for:
 - Allocating the coder array.
 - Initialising each coder.
 - Assigning each coder its identifier and shared control structure.
+- `run_simulation`: creating one thread per coder and joining every thread that
+  was successfully created. The loop counter doubles as the created-thread
+  count, so a partial failure joins exactly `0..i - 1` threads.
 
 ### `dongles.c`
 
@@ -164,7 +170,9 @@ Responsible for:
 
 - Allocating the dongle array.
 - Initialising each dongle.
-- Preparing the dongle state used by the synchronisation layer.
+- Applying the circular nominal topology (`dongles_assignation`).
+- `cooldown_available_time_dongle`: written for the cooldown clock, but **not
+  yet called by anyone** (see "Open items").
 
 ### `compiling.c`
 
@@ -188,6 +196,21 @@ Contains the resource-availability helpers:
   not contain the same dongle twice.
 - `log_line`: the serialised log formatter.
 
+### `sync.c`
+
+Holds `init_sync` and `destroy_sync`. Initialisation reports which primitive
+failed; destruction only destroys what was successfully created, using a count
+of created primitives.
+
+### `simulation.c`
+
+Holds the time helpers:
+
+- `current_time`: milliseconds since the epoch, from `gettimeofday`.
+- `ms_to_timespec`: converts milliseconds into a `struct timespec` absolute
+  deadline. Written in preparation for `pthread_cond_timedwait` (the cooldown
+  clock, micro-objective 3.4) and **not yet called**.
+
 ---
 
 ## Main Data Structures
@@ -202,7 +225,9 @@ It stores:
 - The scheduler type.
 - Timing parameters.
 - The number of compilations required.
-- The simulation status.
+- The simulation status (initialised to 1; not yet read by any thread).
+- The simulation start timestamp used to compute relative log times.
+- The synchronisation primitives (`mtx_dongles`, `mtx_log`, `cond_dongles`).
 - The dynamically allocated coder array.
 - The dynamically allocated dongle array.
 
@@ -254,10 +279,16 @@ FREE
 COOLDOWN
 ```
 
-The current code represents these states with named `#define` constants:
+The current code represents the states with named `#define` constants:
 `DONGLE_BLOCKED`, `DONGLE_FREE` and `DONGLE_COOLDOWN`. This avoids numeric
 magic values while keeping the state type simple. A C `enum` has not yet been
 introduced in the current implementation.
+
+Only `BLOCKED` and `FREE` are written by the simulation today. `DONGLE_COOLDOWN`
+is declared but **never assigned**: the cooldown is expressed by the
+`available_at` timestamp instead, so a cooling dongle keeps the `FREE` state. A
+dedicated `COOLDOWN` state is deliberately avoided because nothing would return
+the dongle to `FREE`.
 
 The dongles are also stored in a dynamically allocated array.
 
@@ -524,18 +555,18 @@ The mutex protects the timestamp and state transition, while the actual waiting 
 
 ## Threads
 
-Each coder will eventually be represented by one POSIX thread.
+Each coder is represented by one POSIX thread, created by `run_simulation`.
 
-The main thread will:
+The main thread:
 
 ```text
-1. Initialise the simulation.
-2. Create one thread per coder.
-3. Start the monitor.
-4. Wait for all coder threads with pthread_join.
-5. Wait for the monitor if necessary.
-6. Destroy mutexes and condition variables.
-7. Free allocated memory.
+1. Initialise the simulation.                        (done)
+2. Create one thread per coder.                      (done)
+3. Start the monitor.                                (pending: Hito 6)
+4. Wait for all coder threads with pthread_join.      (done)
+5. Wait for the monitor if necessary.                 (pending)
+6. Destroy mutexes and condition variables.           (done)
+7. Free allocated memory.                             (done)
 ```
 
 Thread creation order does not guarantee execution order.
@@ -815,6 +846,8 @@ Important constraints include:
 - Dongle readiness check: state plus cooldown timestamp evaluated together.
 - Refusal to treat one dongle as two resources (`left_id == right_id`).
 - Millisecond clock helper (`simulation.c`).
+- `ms_to_timespec` helper (milliseconds to `struct timespec` deadline), written
+  for the cooldown clock; not yet called.
 - Makefile header dependency tracking.
 - Object files and binary excluded from version control.
 - Norminette compliance across all source files.
@@ -830,10 +863,13 @@ Important constraints include:
 - Notification of waiting coders on release (`pthread_cond_broadcast`).
 - The two `has taken a dongle` logs, in subject order before `is compiling`.
 - Single-exit acquisition helper that cannot fail: it returns holding the pair.
+- Thread creation per coder, storing the pointer to the heap array element.
+- `pthread_create` result checked on return value (`!= 0`), stopping at the first failure.
+- Thread joining (`run_simulation` joins every thread that was created).
+- Joining before destroying synchronisation objects and freeing memory.
 
 ### Still to implement
 
-- Thread creation and joining (`run_simulation`).
 - Cooldown expiry notification (timed wait or relay thread).
 - Burnout detection by the monitor thread.
 - Simulation status flag checked by waiting and looping threads.
@@ -841,16 +877,24 @@ Important constraints include:
 - EDF queue.
 - Complete termination protocol.
 - Full error cleanup for thread creation.
-- Final testing with ThreadSanitizer and stress cases.
 
 ### Open items
 
 - A dongle that is free but still cooling is never re-announced when the
   cooldown expires. If every coder waits on it, nobody wakes them. The
-  condition variable needs a timed wait or a relay.
-- No thread has been created yet, so none of the synchronisation logic has
-  been executed at runtime. A clean exit code does not validate concurrency
-  until `run_simulation` exists.
+  condition variable needs a timed wait or a relay. This has been observed at
+  runtime: coders log one complete cycle and then the program blocks in
+  `pthread_join` because a sleeping coder is never woken.
+- When output is redirected to a pipe, `printf` is block-buffered, so logs may
+  not appear until the process exits. Run with an unbuffered stdout
+  (`stdbuf -oL`) when capturing output; on a terminal it is line-buffered.
+- A coder with `number_of_coders = 1` waits forever for its second dongle by
+  design; only the monitor (Hito 6) can end that situation.
+- Dead code carried ahead of its wiring: `cooldown_available_time_dongle` and
+  `ms_to_timespec` are defined and prototyped but never called, and the
+  `DONGLE_COOLDOWN` state is never assigned. They are the scaffolding for the
+  cooldown clock (3.4). `simulation_status` is set to `1` in `init.c` and never
+  read (2.9).
 
 ---
 

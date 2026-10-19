@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/19 19:24:22 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/19 21:55:08 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -85,9 +85,11 @@ void		cooldown_available_time_dongle(
 /* CODERS.C */
 void		coder_args(t_coder *coder, int i, t_control *control);
 int			init_coders(t_control *control);
+int			run_simulation(t_control *control);
 
 /* SIMULATION.C */
 long long	current_time(void);
+void		ms_to_timespec(long long ms, struct timespec *when);
 
 /* SYNC.C */
 int			init_sync(t_control *control);

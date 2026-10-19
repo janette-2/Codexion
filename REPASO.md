@@ -1,7 +1,8 @@
 # REPASO A4 — Codexion
 
-> Hoja de una cara para imprimir. Estado: adquisición de dongles cerrada,
-> hilos pendientes (2.6). Detalle completo en `CONTROL.md` y `DIAGRAMAS.md`.
+> Hoja de una cara para imprimir. Estado: hilos creados y corriendo (2.6/2.7),
+> adquisición cerrada; falta el timbre del cooldown (3.4). Detalle completo en
+> `CONTROL.md`, teoría en `TEORIA.md` y dibujos en `DIAGRAMAS.md`.
 
 ---
 

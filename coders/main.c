@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/18 13:45:59 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/19 21:05:16 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,6 +43,11 @@ int	main(int argc, char *arg[])
 	if (init_sync(&control) != 0)
 		return (free_control(&control), 1);
 	created = 3;
+	if (run_simulation(&control) != 0)
+	{
+		destroy_sync(&control, created);
+		return (free_control(&control), 1);
+	}
 	destroy_sync(&control, created);
 	return (free_control(&control), 0);
 }

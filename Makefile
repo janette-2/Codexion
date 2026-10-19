@@ -28,6 +28,6 @@ fclean: clean
 	rm -f $(NAME)
 
 re:
-	fclean all
+	$(MAKE) fclean all
 
 .PHONY: clean fclean re all

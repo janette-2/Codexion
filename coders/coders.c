@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 16:24:55 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/14 20:10:22 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/19 21:01:43 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -40,4 +40,27 @@ int	init_coders(t_control *control)
 		i++;
 	}
 	return (0);
+}
+
+// Nº of created threads == i;
+int	run_simulation(t_control *control)
+{
+	int	i;
+	int	j;
+
+	i = 0;
+	while (i < control->number_of_coders)
+	{
+		if (pthread_create(
+				&control->coders[i].coder_pthread, NULL,
+				coder_routine, &control->coders[i]) != 0)
+			break ;
+		i++;
+	}
+	j = 0;
+	while (j < i)
+		pthread_join(control->coders[j].coder_pthread, NULL);
+	if (i == control->number_of_coders)
+		return (0);
+	return (1);
 }
