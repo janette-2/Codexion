@@ -479,13 +479,18 @@ checked together inside the critical section, and a `while` loop around
 in use only after the check succeeds, so no coder ever holds a partial pair.
 
 The release half is implemented in `compiling_phase`: after the compilation
-sleep, a second critical section marks both dongles free and stores their
-cooldown timestamp. The two fields are always written together.
+sleep, a second critical section marks both dongles free, stores their cooldown
+timestamp, and notifies every waiting coder with `pthread_cond_broadcast`. The
+state and the timestamp are written together, and the notification happens
+after the writes and inside the mutex, so a woken coder always observes the new
+state.
 
-One piece is still missing: released coders do not yet notify waiting coders.
-Until `pthread_cond_broadcast` is added to the release section, a thread that
-sleeps on the condition variable has no one to wake it. This is a known open
-item, not a design decision.
+One piece of the cooldown is still missing: a release notifies waiters, but
+nothing notifies them when a cooldown **expires**. A dongle that is free but
+still cooling is seen as unavailable, and if every coder ends up waiting on it,
+nobody rings the bell again. The fix is either a timed wait
+(`pthread_cond_timedwait` with a deadline computed from `available_at`) or a
+relay thread that wakes waiters when the shortest cooldown elapses.
 
 ---
 
@@ -822,12 +827,14 @@ Important constraints include:
 - Atomic acquisition of both dongles, waiting on the condition variable.
 - Release under the dongle mutex, writing state and cooldown timestamp together.
 - Cooldown timestamp measured from the release, not from the acquisition.
+- Notification of waiting coders on release (`pthread_cond_broadcast`).
+- The two `has taken a dongle` logs, in subject order before `is compiling`.
+- Single-exit acquisition helper that cannot fail: it returns holding the pair.
 
 ### Still to implement
 
 - Thread creation and joining (`run_simulation`).
-- Notification of waiting coders on release (`pthread_cond_broadcast`).
-- The two `has taken a dongle` logs, before `is compiling`.
+- Cooldown expiry notification (timed wait or relay thread).
 - Burnout detection by the monitor thread.
 - Simulation status flag checked by waiting and looping threads.
 - FIFO queue.
@@ -838,13 +845,9 @@ Important constraints include:
 
 ### Open items
 
-- `pthread_cond_broadcast` is absent from the whole codebase. With the
-  condition-variable wait already in place this becomes a hang as soon as
-  threads exist: nobody wakes a sleeping coder. It belongs in the release
-  section, after the state and timestamp writes and before the unlock.
-- `block_dongles` returns `int` but can only return 1, and `compiling_phase`
-  wraps it in a condition that is always true. The function should return
-  `void` and the condition should be removed.
+- A dongle that is free but still cooling is never re-announced when the
+  cooldown expires. If every coder waits on it, nobody wakes them. The
+  condition variable needs a timed wait or a relay.
 - No thread has been created yet, so none of the synchronisation logic has
   been executed at runtime. A clean exit code does not validate concurrency
   until `run_simulation` exists.

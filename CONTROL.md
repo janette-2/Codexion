@@ -35,20 +35,24 @@
 - [x] Adquisición delegada en `block_dongles` (`compiling.c`) con `while + pthread_cond_wait` — adelanto del micro-objetivo **3.1**.
 - [x] Dos secciones críticas separadas por el `usleep`: coger / trabajar / devolver.
 - [x] Devolución bajo `mtx_dongles` con `FREE` + `available_at = ahora + cooldown` pareados — adelanto del **3.3**.
+- [x] `pthread_cond_broadcast` en la devolución, después de `FREE + available_at` y antes del `unlock`.
+- [x] Dos logs `has taken a dongle` antes del `is compiling`, fuera de toda sección crítica (orden de `Codexion.md:232`).
+- [x] `block_dongles` en `void`: sin camino de fallo porque el `while` garantiza el par al salir; el `if` muerto de `compiling_phase` eliminado.
 - [x] Prototipos en `codexion.h` incluido `block_dongles` y `cond_dongles` en `t_control`.
 
 ### Verificación actual
 
-- `make re`: sin warnings con `-Wall -Wextra -Werror -pthread`.
-- `norminette`: 9/9 OK.
+- `make re`: sin warnings con `-Wall -Wextra -Werror -pthread` (exit 0).
+- `norminette`: 9/9 OK. `block_dongles` 15 líneas, `compiling_phase` 21.
 - `./codexion 4 1000 50 30 30 5 100 fifo`: exit 0, sin salida.
 - **Cero hilos todavía.** No existe ningún `pthread_create` ni `pthread_join`: `compiling_phase` y `block_dongles` se compilan pero **no se ejecutan**. Ninguna prueba de concurrencia es válida hasta 2.6.
 
 ### Deuda pendiente
 
-- [ ] **`pthread_cond_broadcast` no está en ningún sitio del proyecto.** Con la espera ya activa esto es un cuelgue latente: el hilo que se duerme en `block_dongles` no tiene quien lo despierte. Va en el bloque de devolución, después de `FREE + available_at` y antes del `unlock`.
-- [ ] **Código muerto:** `block_dongles` es `int` con `return (1)` inalcanzable por 0, y `compiling_phase` envuelve todo en `if (block_dongles(coder) == 1)`, siempre cierto. Debe pasar a `void` y quitarse el `if`.
 - [ ] `coder_routine` no comprueba `simulation_status` (pendiente con 2.9).
+- [x] ~~`pthread_cond_broadcast` ausente en la devolución.~~ Cerrado.
+- [x] ~~Código muerto: `block_dongles` en `int` + `if` siempre cierto.~~ Cerrado, ahora `void`.
+- [x] ~~Faltaban los dos `LOG_TAKEN`.~~ Cerrados, en orden correcto.
 - [x] ~~`log_line` con formato incorrecto.~~ Cerrado en 2.0.
 - [x] ~~`compiling.c` con stubs que pasan structs por valor.~~ Reescrito entero.
 - [x] ~~`resources.c` no estaba en el Makefile.~~ Corregido.
@@ -167,11 +171,13 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 - **Norma: 25 líneas por función y 5 funciones por archivo.** La fase de compile con cogida, log, contadores y devolución dentro se pasaba de 25. La solución fue extraer la adquisición a `block_dongles`, que lleva `compiling.c` a 5 de 5: el sitio se ha acabado, cualquier función nueva del ciclo tiene que vivir en otro fichero.
 - **`n == 1` con la condición activa duerme para siempre, y es correcto.** El guard `left_id == right_id` devuelve "no disponible" y el coder queda en `cond_wait` sin que nadie lo despierte. No es un bug: es el camino de burnout que remata el monitor en el Hito 6. Mientras tanto, `./codexion 1 ...` se colgará en el `pthread_join`.
 
-### Pendiente antes de dar por cerrada la adquisición (adelantada del Hito 3)
+### Adquisición — CERRADA (adelantada del Hito 3)
 
-- [ ] Añadir `pthread_cond_broadcast(&cond_dongles)` en el bloque de devolución, bajo `mtx_dongles`, después de `FREE + available_at`.
-- [ ] `block_dongles` a `void` y borrar el `if (block_dongles(coder) == 1)` muerto de `compiling_phase`.
-- [ ] Los dos `LOG_TAKEN` al coger, antes del `LOG_COMPILING` (orden de `Codexion.md:365`).
+- [x] `pthread_cond_broadcast(&cond_dongles)` en el bloque de devolución, bajo `mtx_dongles`, después de `FREE + available_at`.
+- [x] `block_dongles` a `void` y `if` muerto borrado de `compiling_phase`.
+- [x] Los dos `LOG_TAKEN` al coger, antes del `LOG_COMPILING` (orden de `Codexion.md:232`).
+
+Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compila → devuelve + cooldown + timbre. **El broadcast convierte la espera en un dormir con despertar garantizado.** Ver el "Mapa visual" al final de este documento.
 
 ### Criterios de aceptación del Hito 2
 
@@ -186,14 +192,14 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 
 **Objetivo:** el corazón del proyecto. Nadie compila sin dos dongles; nadie retiene uno esperando el segundo (anti-deadlock); el cooldown se respeta sin `usleep` bajo mutex.
 
-> **Estado adelantado (mitad del Hito 2):** 3.1 está **parcialmente** hecho — `block_dongles` comprueba ambos dongles y espera con `pthread_cond_wait` en un `while`. 3.3 también a medias — la devolución escribe `FREE + available_at` bajo la llave, pero **falta el `broadcast`**. 3.6 está hecho (`dongles_available` reescrita con `dongle_ready` + guard). Quedan: `LOG_TAKEN` ×2, broadcast, y decidir si se usa el estado `DONGLE_COOLDOWN` o solo `available_at` (ver 3.3).
+> **Estado adelantado (mitad del Hito 2):** 3.1, 3.2, 3.3 y 3.6 están **hechos** — ver la sección "Adquisición — CERRADA" del Hito 2 y el "Mapa visual" al final. Pendientes reales: **3.4 (el reloj del cooldown)** — hoy el dongle en enfriamiento solo se comprueba al despertar, y nadie suena el timbre cuando el cooldown expira; con todos los coders dormidos esperando enfriamiento el programa se cuelga. Es el riesgo principal que queda. Después, 3.5 (n==1, necesita el monitor) y los tests 3.7/3.8 (necesitan hilos).
 
 ### Micro-objetivos
 
-- [ ] **3.1** Protocolo de adquisición en `mtx_dongles`: comprobar **ambos** dongles (`FREE` y `current_time >= available_at`); si no, `pthread_cond_wait(&cond_dongles, &mtx_dongles)`. **Jamás** tomar uno y esperar el otro.
-- [ ] **3.2** Al adquirir: marcar ambos `IN_USE`, log dos veces `has taken a dongle` (bajo `mtx_log`), salir de la sección crítica y solo entonces compilar.
-- [ ] **3.3** Al liberar (tras compile): entrar en `mtx_dongles`, marcar ambos `COOLDOWN` y `available_at = current_time() + dongle_cooldown`, `pthread_cond_broadcast`/`signal`, salir.
-- [ ] **3.4** Gestión del cooldown sin dormir bajo mutex: quien encuentra un dongle en `COOLDOWN` espera en la condvar. Como `pthread_cond_timedwait` **sí** está autorizada, usarla con un `pthread_mutex_t` + `timespec` calculado desde `available_at` (evita un hilo relevo y clava la precisión). Alternativa: un "relevo" que haga `usleep` el cooldown más corto y luego `broadcast`.
+- [x] **3.1** Protocolo de adquisición en `mtx_dongles`: comprobar **ambos** dongles (`FREE` y `current_time >= available_at`); si no, `pthread_cond_wait(&cond_dongles, &mtx_dongles)`. **Jamás** tomar uno y esperar el otro. **Hecho** en `block_dongles`.
+- [x] **3.2** Al adquirir: marcar ambos `BLOCKED`, log dos veces `has taken a dongle` (fuera de la sección crítica, con `mtx_log` dentro de `log_line`), salir de la sección crítica y solo entonces compilar. **Hecho.**
+- [x] **3.3** Al liberar (tras compile): entrar en `mtx_dongles`, marcar ambos `FREE`, `available_at = current_time() + dongle_cooldown`, `pthread_cond_broadcast`, salir. **Hecho.** Nota: no se usa el estado `DONGLE_COOLDOWN`; el enfriamiento lo expresa `available_at`, porque `dongle_ready` exige estado `FREE`.
+- [ ] **3.4** Gestión del cooldown sin dormir bajo mutex: quien encuentra un dongle en enfriamiento espera en la condvar. Como `pthread_cond_timedwait` **sí** está autorizada, usarla con un `pthread_mutex_t` + `timespec` calculado desde `available_at` (evita un hilo relevo y clava la precisión). Alternativa: un "relevo" que haga `usleep` el cooldown más corto y luego `broadcast`. **PENDIENTE — es el riesgo de cuelgue actual**: nadie suena el timbre cuando el cooldown expira.
 - [ ] **3.5** Caso `number_of_coders == 1`: un solo dongle, el coder nunca puede adquirir el par → debe caer en burnout vía monitor (Hito 6); aquí basta con que **no** se cuelgue: la condvar + monitor lo resolverá. No usar el mismo dongle dos veces, no bloquear el mismo mutex dos veces.
 - [ ] **3.6** Reescribir/eliminar `dongles_available` con la lógica correcta (estado + `available_at <= now`).
 - [ ] **3.7** Test manual: `./codexion 4 800 200 150 100 3 50 fifo` — verificar que cada `is compiling` está precedido de exactamente dos `has taken a dongle` y que nunca hay dos `is compiling` simultáneos para el mismo dongle (revisar logs).
@@ -315,18 +321,196 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 
 ---
 
-## Próximo paso: **cerrar 2.1 y pasar a 2.6**
+## Próximo paso: **2.6 — crear y unir los hilos**
 
-Hito 1 cerrado y commiteado. Hito 2 a medias: 2.0–2.5 hechos, 2.6–2.9 sin empezar.
+Hito 1 cerrado y commiteado. Hito 2: 2.0–2.5 hechos **y la adquisición adelantada del Hito 3 cerrada** (void, `LOG_TAKEN` ×2, broadcast). Falta 2.6–2.9.
 
 Orden recomendado:
 
-1. **Cerrar la adquisición adelantada** (tres puntos, ver "Pendiente antes de dar por cerrada la adquisición"): `block_dongles` a `void` y borrar el `if` muerto; `broadcast` en el bloque de devolución; y decidir si los `LOG_TAKEN` se añaden ahora o en el Hito 3.
-2. **2.6–2.7** `run_simulation` con contador de hilos creados (mismo patrón que `init_sync`) y `pthread_join` de todos antes de destruir nada. **Es aquí donde la concurrencia empieza a ejecutarse de verdad**: hasta ahora todo se compila pero nada corre.
-3. **2.8** Smoke test con 3 hilos — primera observación real de los logs serializados.
-4. **2.9** Flag `simulation_status` thread-safe y su comprobación en `coder_routine`.
+1. **2.6–2.7** `run_simulation` con contador de hilos creados (mismo patrón que `init_sync`) y `pthread_join` de todos antes de destruir nada. **Es aquí donde la concurrencia empieza a ejecutarse de verdad**: hasta ahora todo se compila pero nada corre.
+2. **2.8** Smoke test con 3 hilos — primera observación real de los logs serializados.
+3. **2.9** Flag `simulation_status` thread-safe y su comprobación en `coder_routine`.
+4. **3.4** El cooldown sin timbre (ver "MAPA VISUAL" sección 5): la única fuente de cuelgue que queda en la ruta de adquisición.
 
-Advertencia de prueba: con el `broadcast` aún ausente, 2.6 **colgará** con cualquier n > 1 (los que esperan en `cond_wait` no se despiertan). `./codexion 1 ...` se colgará aunque el broadcast exista: es el burnout en espera del Hito 6. No confundir un hang esperado con un bug.
+Advertencias de prueba:
+- Con `dongle_cooldown = 0` el ciclo completo funciona. Con cooldown > 0 puede colgarse por el punto 4 (nadie avisa al expirar el enfriamiento).
+- `./codexion 1 ...` se colgará aunque todo lo demás funcione: es el burnout en espera del monitor (Hito 6). No confundir un hang esperado con un bug.
+- Los dongles de un coder se comparten con sus vecinos; con `n` par y `n` dongles la topología funciona, pero el primer test debe usar cooldown 0 y tiempos holgados.
+
+---
+
+## MAPA VISUAL — el ciclo del coder, para estudiar
+
+> Esta sección es material de estudio y de defensa. Cuando toque el Hito 8, buena
+> parte de esto alimenta la sección "Thread synchronization mechanisms" del README
+> que exige `Codexion.md:407`.
+>
+> Versiones complementarias en archivos aparte:
+> - **`DIAGRAMAS.md`** — los mismos esquemas en Mermaid (se renderizan como dibujo
+>   en GitHub/VS Code): flujo del ciclo, secuencia hilo-contra-hilo, Gantt de la
+>   línea temporal, estados del dongle y mapa mental.
+> - **`REPASO.md`** — hoja de una cara A4 para imprimir: ciclo, quién protege qué,
+>   logs, trampas y preguntas de defensa con respuesta corta.
+
+### 1. Quién protege qué
+
+```text
+        ESTADO COMPARTIDO                    LO PROTEGE
+  ----------------------------------    ----------------
+  dongles[i].state_dongle            ---\
+  dongles[i].available_at            ---/-->  mtx_dongles
+  (futuro: colas del planificador)   ---/
+
+  printf -> stdout                        -->  mtx_log
+
+  "dónde duermo / a quién despierto"      -->  cond_dongles (NO es un lock:
+                                                es la sala de espera)
+```
+
+Regla mental: **cada dato compartido tiene UNA llave.** Si un dato lo tocan dos
+llaves distintas, hay un camino que nadie vigila. Si lo toca una sola, la
+sección crítica de esa llave es el único sitio donde mirarlo.
+
+### 2. Ciclo de vida del hilo (esquema del código real)
+
+```text
+              coder_routine(void *arg)          <- firma obligatoria de pthread
+                        |
+      +-----------------v---------------------------+
+      |  while (compiles_done < compiles_required)  |  <- lee ESTADO EN VIVO
+      +-----------------+---------------------------+
+                        |
+  +---------------------v------------------------------------+
+  |  compiling_phase(coder)                                   |
+  |                                                           |
+  |   [A] lock mtx_dongles         <--- SECCIÓN CRÍTICA 1     |
+  |       while (!dongles_available(...))                     |
+  |           cond_wait  <-- duerme AQUÍ y SUELTA la llave    |
+  |       marca ambos BLOCKED                                 |
+  |       unlock                                              |
+  |                                                           |
+  |       log has taken a dongle   <- log 1                   |
+  |       log has taken a dongle   <- log 2    (sin llaves)   |
+  |       log is compiling                                    |
+  |       last_compilation = ahora                            |
+  |                                                           |
+  |       usleep(time_to_compile * 1000)   <-- SIN LLAVE      |
+  |                                          (el trabajo)     |
+  |                                                           |
+  |   [B] lock mtx_dongles         <--- SECCIÓN CRÍTICA 2     |
+  |       ++number_of_compiles_done      (trabajo terminado)  |
+  |       ambos FREE + available_at = ahora + cooldown        |
+  |       broadcast(cond_dongles)          <-- EL TIMBRE      |
+  |       unlock                                              |
+  +---------------------+-------------------------------------+
+                        |
+  +---------------------v-------------------------------------+
+  |  debugging_phase:   log + usleep(time_to_debug * 1000)     |
+  +---------------------+-------------------------------------+
+                        |
+  +---------------------v-------------------------------------+
+  |  refactoring_phase: log + usleep(time_to_refactor * 1000)  |
+  +---------------------+-------------------------------------+
+                        |
+              vuelve al while de arriba
+```
+
+Clave del dibujo: **dos secciones críticas cortas con el trabajo largo en medio.**
+Todo lo que dura (compilar) ocurre sin llave. Todo lo que toca estado compartido
+ocurre con llave y en microsegundos.
+
+### 3. La espera y el timbre, hilo contra hilo
+
+```text
+      HILO A (espera dongles)                 HILO B (los devuelve)
+
+  lock mtx_dongles
+  dongle 1 ocupado -> while no sale
+  cond_wait ............................
+        zzz (dormido, llave SUELTA)          lock mtx_dongles
+        zzz                                  FREE + available_at
+        zzz                                  broadcast ~~~~~"\  timbre
+        zzz                                  unlock             |
+        |<----------- despierta <-------------------------------"
+  (reengancha) lock mtx_dongles
+  ¿disponible? SÍ (B ya lo liberó)
+  marca BLOCKED
+  unlock
+```
+
+Dos razones por las que el `broadcast` va **dentro** del lock y **después** del
+cambio de estado:
+
+```text
+  timbre ANTES del cambio:           timbre DESPUÉS del cambio (correcto):
+  A despierta, mira, ve viejo        A despierta, mira, ve el FREE
+  -> se duerme otra vez              -> sigue adelante
+  -> nadie volverá a sonar           -> nadie más tiene que sonar
+     (cuelgue)                          (sano)
+```
+
+### 4. Línea temporal — dos coders, sin cooldown
+
+```text
+ ms    HILO 1 (coder 1)                  HILO 2 (coder 2)          log que sale
+ ------------------------------------------------------------------------------
+  0    coge d1 + d2 -> BLOCKED
+  0    log taken/taken/compiling                                    0 1 has taken a dongle
+                                                                    0 1 has taken a dongle
+                                                                    0 1 is compiling
+ 10    duerme compilando (50 ms)
+ 10                                      intenta d1 -> ocupado
+ 10                                      cond_wait -> DORMIDO
+ 60    FREE d1+d2 + BROADCAST ---timbre---> despierta
+ 60    log is debugging                                            60 1 is debugging
+ 60                                       d1 y d2 libres -> coge
+ 60                                       log taken/taken/compiling 60 2 has taken a dongle
+                                                                    60 2 has taken a dongle
+                                                                    60 2 is compiling
+ 60    duerme depurando (30 ms)           duerme compilando (50 ms)
+ 90    log is refactoring                                          90 1 is refactoring
+ ...   vuelve a intentar compilar        ...
+```
+
+Mientras 1 compila, 2 duerme en la condvar sin gastar CPU. El timbre de 1 es lo
+que arranca a 2. Ese es el ciclo entero del proyecto.
+
+### 5. El peligro que queda: el cooldown sin timbre (micro-objetivo 3.4)
+
+```text
+ ms    HILO 1                                HILO 2
+ ---------------------------------------------------------
+  0    coge d1+d2
+ 10    suelta: FREE + available_at=60 + broadcast
+ 10                                          despierta, mira: ¡cooldown! -> duerme
+ 10    reintenta coger: ¡cooldown! -> duerme
+       (nadie tiene los dongles, ambos libres pero enfriando)
+       **** NADIE volverá a sonar el timbre al expirar el cooldown ****
+       AMBOS DORMIDOS -> pthread_join no vuelve -> el programa CUELGA
+```
+
+El `broadcast` avisa cuando un dongle **se libera**, pero no cuando **termina de
+enfriarse**. Faltan dos piezas posibles (elegir una en 3.4):
+
+- `pthread_cond_timedwait` con un `timespec` calculado desde `available_at`:
+  el hilo duerme exactamente lo que queda de enfriamiento y se despierta solo.
+- Un hilo "relevo" que duerme lo que dure el cooldown más corto y suena el
+  timbre al terminar.
+
+### 6. Propósito de cada decisión (para la defensa)
+
+| decisión | por qué |
+|---|---|
+| dos secciones críticas, no una | el trabajo dura cientos de ms; con la llave puesta durante el trabajo, nadie más podría progresar. Llave = cambiar estado, no trabajar. |
+| `cond_wait` en vez de girar comprobando | dormir sin gastar CPU y ser despertado por quien cambia el estado. El giro es correcto pero desperdicia el procesador y adivina cuándo volver. |
+| `while` y no `if` | el SO puede despertar de forma espuria, y el `broadcast` despierta a todos: hay que re-comprobar al despertar. |
+| `broadcast` y no `signal` | `signal` despierta a uno: puede despertar al que no puede coger su par y dejar dormido al que sí podía. Ojo perdido = cuelgue. |
+| `broadcast` dentro del lock y tras el cambio | el despertado debe VER el nuevo estado; si el timbre suena antes, vuelve a dormirse y ya nadie suena. |
+| cooldown al devolver, no al coger | el enfriamiento se cuenta desde que el recurso quedó libre, no desde que lo usaste. |
+| `available_at` y no un estado `COOLDOWN` | `dongle_ready` exige estado `FREE`; un estado `COOLDOWN` estático atascaría el dongle para siempre (nadie lo devuelve a `FREE`). El enfriamiento es una fecha, no un estado. |
+| logs fuera de la sección crítica | `log_line` bloquea `mtx_log` por dentro: llamarlo con `mtx_dongles` puesto anida dos llaves, y bloquear `mtx_log` a mano alrededor sería doble lock del mismo hilo (auto-cuelgue). Además el log es un informe, no una negociación. |
+| `block_dongles` devuelve `void` | el `while` garantiza el par al salir: no hay camino de fallo. El caso `n==1` no devuelve 0, simplemente **no vuelve nunca** (lo remata el monitor). |
+| `number_of_compiles_done++` al final | cuenta compilaciones **terminadas**: si sube al empezar, un lector (el monitor) ve trabajo que aún no ocurrió. |
 
 ---
 
