@@ -171,15 +171,20 @@ Responsible for:
 - Allocating the dongle array.
 - Initialising each dongle.
 - Applying the circular nominal topology (`dongles_assignation`).
+- `put_dongles_blocked`: marking the acquired pair as in use, called from
+  `block_dongles` while the dongle mutex is held.
 - `cooldown_available_time_dongle`: written for the cooldown clock, but **not
-  yet called by anyone** (see "Open items").
+  yet called by anyone** (see "Open items"). The release path writes the
+  timestamp directly instead.
 
 ### `compiling.c`
 
 Holds the workflow executed by each coder thread:
 
 - `block_dongles`: acquires both required dongles atomically, waiting on the
-  condition variable while they are unavailable.
+  condition variable while they are unavailable. The sleep is re-chosen on every
+  pass: a timed wait when the pair has a measurable cooldown deadline, an
+  untimed wait otherwise.
 - `compiling_phase`: logs the compilation, sleeps for `time_to_compile`, then
   releases both dongles.
 - `debugging_phase` and `refactoring_phase`: log and sleep, touching no shared
@@ -193,7 +198,10 @@ Contains the resource-availability helpers:
 - `dongle_ready`: a dongle is usable when its state is free and its cooldown
   timestamp has elapsed.
 - `dongles_available`: both dongles of a pair must be ready, and the pair must
-  not contain the same dongle twice.
+  not contain the same dongle twice. It answers whether the pair can be taken,
+  not why it cannot.
+- `cooldowns_deadline`: given a pair, the instant at which it becomes
+  available, or `DEADLINE_NEVER` when no such instant exists yet.
 - `log_line`: the serialised log formatter.
 
 ### `sync.c`
@@ -208,8 +216,7 @@ Holds the time helpers:
 
 - `current_time`: milliseconds since the epoch, from `gettimeofday`.
 - `ms_to_timespec`: converts milliseconds into a `struct timespec` absolute
-  deadline. Written in preparation for `pthread_cond_timedwait` (the cooldown
-  clock, micro-objective 3.4) and **not yet called**.
+  deadline. Called by `block_dongles` when the cooldown wait needs a date.
 
 ---
 
@@ -505,9 +512,10 @@ Compilation must happen outside the resource-management mutex. The mutex should 
 ### Current state of the protocol
 
 The acquisition half is implemented in `block_dongles`: both dongles are
-checked together inside the critical section, and a `while` loop around
-`pthread_cond_wait` handles the unavailable case. Both dongles are marked as
-in use only after the check succeeds, so no coder ever holds a partial pair.
+checked together inside the critical section, and a `while` loop around the wait
+handles the unavailable case. Both dongles are marked as in use only after the
+check succeeds, so no coder ever holds a partial pair. The marking itself is
+delegated to `put_dongles_blocked` in `dongles.c`.
 
 The release half is implemented in `compiling_phase`: after the compilation
 sleep, a second critical section marks both dongles free, stores their cooldown
@@ -516,12 +524,23 @@ state and the timestamp are written together, and the notification happens
 after the writes and inside the mutex, so a woken coder always observes the new
 state.
 
-One piece of the cooldown is still missing: a release notifies waiters, but
-nothing notifies them when a cooldown **expires**. A dongle that is free but
-still cooling is seen as unavailable, and if every coder ends up waiting on it,
-nobody rings the bell again. The fix is either a timed wait
-(`pthread_cond_timedwait` with a deadline computed from `available_at`) or a
-relay thread that wakes waiters when the shortest cooldown elapses.
+A release notifies waiters, but it does not notify them when a cooldown
+**expires**. The two unavailability cases therefore need two different sleeps,
+re-chosen on every pass of the `while`:
+
+- If either dongle is not `FREE`, or the coder would use the same dongle twice
+  (`left == right`), there is no date to compute: only a release can wake the
+  waiter, so it sleeps with `pthread_cond_wait`. The helper returns
+  `DEADLINE_NEVER` for these cases.
+- If both are `FREE`, the pair becomes available when the later of the two
+  `available_at` timestamps is reached. That is an absolute instant on
+  `CLOCK_REALTIME`, the same clock `pthread_cond_timedwait` counts on, so the
+  waiter sleeps with `pthread_cond_timedwait` and wakes itself up.
+
+The deadline is produced by `cooldowns_deadline` in `resources.c` and converted
+with `ms_to_timespec`. A deadline that is not strictly in the future would make
+`pthread_cond_timedwait` return immediately and the loop spin instead of sleep,
+which is why the two guards above are not optional.
 
 ---
 
@@ -846,8 +865,15 @@ Important constraints include:
 - Dongle readiness check: state plus cooldown timestamp evaluated together.
 - Refusal to treat one dongle as two resources (`left_id == right_id`).
 - Millisecond clock helper (`simulation.c`).
-- `ms_to_timespec` helper (milliseconds to `struct timespec` deadline), written
-  for the cooldown clock; not yet called.
+- `ms_to_timespec` helper (milliseconds to absolute `struct timespec` deadline),
+  used by the cooldown wait.
+- `cooldowns_deadline` helper (`resources.c`): returns `DEADLINE_NEVER` for the
+  cases that have no measurable date, and the later of the two `available_at`
+  values otherwise.
+- Cooldown wait chosen inside the `while`: `pthread_cond_wait` when the
+  unavailability has no date, `pthread_cond_timedwait` when it does.
+- `put_dongles_blocked` helper (`dongles.c`): marks the acquired pair in use,
+  extracted to keep `block_dongles` under the 25-line limit.
 - Makefile header dependency tracking.
 - Object files and binary excluded from version control.
 - Norminette compliance across all source files.
@@ -858,6 +884,9 @@ Important constraints include:
 - Thread entry point with the required `void *f(void *arg)` signature.
 - Coder cycle: compile, debug, refactor, with millisecond-to-microsecond conversion.
 - Atomic acquisition of both dongles, waiting on the condition variable.
+- Cooldown wait without a relay thread: `pthread_cond_timedwait` until the
+  stored timestamp when the pair has a measurable date, `pthread_cond_wait`
+  when it does not.
 - Release under the dongle mutex, writing state and cooldown timestamp together.
 - Cooldown timestamp measured from the release, not from the acquisition.
 - Notification of waiting coders on release (`pthread_cond_broadcast`).
@@ -870,7 +899,6 @@ Important constraints include:
 
 ### Still to implement
 
-- Cooldown expiry notification (timed wait or relay thread).
 - Burnout detection by the monitor thread.
 - Simulation status flag checked by waiting and looping threads.
 - FIFO queue.
@@ -880,21 +908,16 @@ Important constraints include:
 
 ### Open items
 
-- A dongle that is free but still cooling is never re-announced when the
-  cooldown expires. If every coder waits on it, nobody wakes them. The
-  condition variable needs a timed wait or a relay. This has been observed at
-  runtime: coders log one complete cycle and then the program blocks in
-  `pthread_join` because a sleeping coder is never woken.
 - When output is redirected to a pipe, `printf` is block-buffered, so logs may
   not appear until the process exits. Run with an unbuffered stdout
   (`stdbuf -oL`) when capturing output; on a terminal it is line-buffered.
 - A coder with `number_of_coders = 1` waits forever for its second dongle by
-  design; only the monitor (Hito 6) can end that situation.
-- Dead code carried ahead of its wiring: `cooldown_available_time_dongle` and
-  `ms_to_timespec` are defined and prototyped but never called, and the
-  `DONGLE_COOLDOWN` state is never assigned. They are the scaffolding for the
-  cooldown clock (3.4). `simulation_status` is set to `1` in `init.c` and never
-  read (2.9).
+  design; only the monitor (Hito 6) can end that situation. It sleeps correctly
+  (0 % CPU) rather than spinning.
+- Dead code carried ahead of its wiring: `cooldown_available_time_dongle` is
+  defined and prototyped but never called, and the `DONGLE_COOLDOWN` state is
+  never assigned. `simulation_status` is set to `1` in `init.c` and never read
+  (2.9).
 
 ---
 

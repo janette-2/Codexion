@@ -3,8 +3,8 @@
 > Para quien nunca ha programado con hilos. Explica **por qué** existe cada pieza,
 > qué problema resuelve y qué pasa si falta. Todo con dibujos.
 > Versión en diagramas Mermaid: `DIAGRAMAS.md`. Resumen imprimible: `REPASO.md`.
-> Estado del código que se usa como ejemplo: hilos creados y ciclo funcionando;
-> falta resolver el cooldown (3.4).
+> Estado del código que se usa como ejemplo: **Hito 2 cerrado, 3.4 y 2.8
+> cerrados** — `cooldowns_deadline` + `cond_timedwait` cableados y verificados.
 
 ---
 
@@ -219,6 +219,54 @@ un instante donde nadie tiene la llave y nadie escucha el timbre → ojo perdido
 despierta a uno, pero en este proyecto no está permitida y no la queremos: ver
 sección 6.)
 
+### 5.1 Dos motivos de no poder, dos formas de dormir (el concepto que cuesta)
+
+Hasta aquí solo hay **un** motivo de espera: *otro tiene el recurso*. Y **un**
+método de despertar: **el timbre** (`broadcast`). Pero fíjate en el límite del
+timbre: **solo suena cuando alguien hace algo** (alguien suelta recursos).
+
+¿Y si lo que esperas **no es una acción de nadie, sino que pase el tiempo**?
+
+Ese es el cooldown: a las 60 el dongle estará listo **no porque alguien haga
+nada**, sino porque el reloj llega a las 60. A las 60 no hay `broadcast` sonando
+— de hecho, quizá ya no quede nadie que pueda sonarlo.
+
+```text
+   ¿DE QUÉ ESPERAS?               ¿QUIÉN TE DESPIERTA?           FUNCIÓN
+   ─────────────────────────────  ─────────────────────────────   ────────────────────
+   a que OTRO suelte lo que       el TIMBRE: solo suena si        cond_wait
+   tiene (BLOCKED)                alguien llama al broadcast      (sin fecha posible)
+
+   a que LLEGUE UNA HORA          el DESPERTADOR: tú marcas la    cond_timedwait
+   (FREE, enfriando)              hora y el SO te despierta       (usa available_at)
+                                  aunque no toque nadie nada
+```
+
+Dos ideas que lo rematan:
+
+1. **El `while` no despierta a nadie.** Él solo **revisa** cuando ya despiertas.
+   Los que despiertan son **el timbre** o **el despertador**. Los dos, tras
+   despertar, **caen en la misma condición del `while`**, que decide si avanza o
+   vuelve a dormirse. Por eso cambiar de función no rompe el bucle: solo cambia
+   *cómo duermes dentro de él*.
+
+2. **La elección se repite en cada vuelta.** No se decide una vez para siempre.
+   En la vuelta 1 puedes dormir con `cond_wait` (el otro compila); en la vuelta 2,
+   con `timedwait` (ya solo falta el cooldown). El mismo hilo, dos métodos,
+   **el mismo `while` reevaluando**.
+
+```text
+   vuelta 1:  right BLOCKED         → "otro lo tiene"     → cond_wait       (timbre)
+   vuelta 2:  ambos FREE, enfriando → "espero una hora"   → timedwait(60)   (despertador)
+   vuelta 3:  el while vuelve a mirar…
+```
+
+**Por qué el `max` de las dos fechas:** necesitas **los dos** dongles, así que
+solo avanzas cuando esté listo el *último*. Elegir `max` en vez de `min` es
+**eficiencia, no corrección**: con `min` te despertarías antes, re-comprobarías
+con el `while` y te volverías a dormir. **El `while` hace segura cualquier
+fecha**; el `max` solo evita levantarte para nada.
+
 ---
 
 ## 6. Los tres errores clásicos de la espera
@@ -385,7 +433,13 @@ despierta**, o **nadie puede soltar lo que el otro espera**.
    Regla:   dos llaves anidadas = peligro; el log va FUERA de la sección crítica.
 ```
 
-### 9.3 El cooldown sin timbre (lo que queda por resolver, 3.4)
+### 9.3 El cooldown sin timbre — ya resuelto (3.4)
+
+**Estado: RESUELTO el 2026-10-21.** Se usó `pthread_cond_timedwait` (opción a),
+descartando el hilo relevo: `available_at` ya es una fecha absoluta sobre el
+mismo `CLOCK_REALTIME` que cuenta el `timedwait`, y `ms_to_timespec` ya existía.
+Verificado: con cooldown 300 la simulación termina sola (`exit=0`, 9/9 compiles).
+El problema y su solución quedan abajo como material de estudio.
 
 ```text
    Hilo libera: FREE + available_at = ahora + cooldown
@@ -396,14 +450,61 @@ despierta**, o **nadie puede soltar lo que el otro espera**.
    Si además el último coder activo termina y sale, nadie los despertará
    jamás  →  pthread_join no vuelve  →  el programa CUELGA.
    ────────────────────────────────────
-   Solución (a elegir): 
-     (a) pthread_cond_timedwait: dormir hasta una FECHA (available_at),
-         para que el propio hilo se despierte cuando expire el cooldown.
-     (b) hilo relevo: alguien duerme el cooldown y luego suena el timbre.
+   Solución (elegida): (a) pthread_cond_timedwait — dormir hasta una FECHA
+         (available_at), para que el propio hilo se despierte cuando expire.
+         [Descartada (b) hilo relevo: ya existe `ms_to_timespec` y
+         `available_at` es fecha absoluta sobre el mismo reloj.]
 ```
 
-Esto se ha reproducido en vivo: con `./codexion 2 2000 50 30 30 1 10 fifo`, el
-coder 1 completa su ciclo y luego el programa cuelga en el `join` del coder 2.
+Esto se reproducía en vivo: con `./codexion 2 2000 50 30 30 1 10 fifo`, el
+coder 1 completaba su ciclo y el programa se quedaba en el `join` del coder 2.
+**Hoy ese mismo comando termina solo.**
+
+### 9.4 El busy-spin: dormir mal es peor que no dormir (lo nuevo)
+
+Añadir `timedwait` introduce un fallo que **no existía antes**: que la fecha sea
+**pasada**. Si le pides al despertador que sonde a las 00:00 de 1970, no duerme:
+**devuelve timeout al instante**. Y como el `while` vuelve a mirar y otra vez
+calcula la misma fecha pasada... otra vez timeout... **giras sin dormir nunca.**
+
+```text
+   deadline en el PASADO
+        │
+        ▼
+   timedwait → ETIMEDOUT al instante   ─┐
+        │                                │ no hay sleep en ninguna parte
+        ▼                                │
+   vuelve al while → misma fecha pasada ─┘   →  BUCLE CERRADO, 100 % CPU
+```
+
+```text
+   SÍNTOMA (lo separa de un cuelgue normal):
+     cuelgue sano   → estado S (sleeping), 0 % CPU, sin más logs
+     giro           → estado R (running),  ~100 % CPU, sin más logs
+
+   Útil en un segundo:  ps -o %cpu,stat -C codexion
+```
+
+**Los tres caminos para acabar con una fecha pasada** (los tres dan el mismo
+síntoma):
+
+1. Retorno `int` para `available_at`: época en ms ≈ **1.79 billones** y `INT_MAX`
+   ≈ 2.1 mil millones → **trunca**, casi seguro a negativo.
+2. `available_at` **viejo** de un dongle `BLOCKED` (fecha de una liberación
+   anterior, o `0` inicial): en `BLOCKED` **no hay fecha posible** que calcular.
+3. **`n == 1`**: `available_at = 0` y la indisponibilidad viene del guard
+   `left == right`, **no del tiempo**. Si no lo mandas a espera infinita, giras.
+
+**La defensa común a los tres:** solo usa `timedwait` cuando la fecha sea
+**estrictamente futura**; en cualquier otro caso → espera infinita. En la práctica:
+`left == right` o `state != FREE` → `DEADLINE_NEVER` (-1) → `cond_wait`. Con
+`left != right` y ambos `FREE` **dentro del `while`**, el `max(available_at)` ya
+es futuro garantizado (si no lo fuera, `dongles_available` te habría dejado salir).
+
+También es una trampa de diseño: **la fecha no la calcula "la función buena", la
+calcula un `if` con las guardas delante.** Primero "¿me importa?", después
+"¿qué leo?" — leer estado compartido para descartarlo después es al menos confuso,
+y en este proyecto es leer estado compartido sin necesidad.
 
 ---
 

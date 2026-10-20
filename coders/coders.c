@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 16:24:55 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/19 21:01:43 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/20 23:55:04 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -59,7 +59,7 @@ int	run_simulation(t_control *control)
 	}
 	j = 0;
 	while (j < i)
-		pthread_join(control->coders[j].coder_pthread, NULL);
+		pthread_join(control->coders[j++].coder_pthread, NULL);
 	if (i == control->number_of_coders)
 		return (0);
 	return (1);

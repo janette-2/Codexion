@@ -1,8 +1,8 @@
 # REPASO A4 — Codexion
 
-> Hoja de una cara para imprimir. Estado: hilos creados y corriendo (2.6/2.7),
-> adquisición cerrada; falta el timbre del cooldown (3.4). Detalle completo en
-> `CONTROL.md`, teoría en `TEORIA.md` y dibujos en `DIAGRAMAS.md`.
+> Hoja de una cara para imprimir. Estado: **Hito 2 cerrado; 3.4 y 2.8 cerrados** —
+> la simulación termina sola (`exit=0`). Pendiente: 2.9 y el monitor. Detalle en
+> `CONTROL.md`, teoría en `TEORIA.md`, dibujos en `DIAGRAMAS.md`.
 
 ---
 
@@ -72,6 +72,17 @@ Burnout se imprime en < 10 ms del momento real.
 - **Comprobar los dos dongles, no uno**: jamás coger uno y esperar el otro.
 - **La condición del bucle lee estado en vivo**, no una copia local.
 - **Un dato = una llave.** Si lo tocan dos, hay un camino sin vigilar.
+- **Dos motivos de espera = dos funciones.** `BLOCKED` (otro lo tiene) → solo el
+  broadcast puede despertarte → `cond_wait`. Enfriando → la hora es el evento →
+  `timedwait` con `available_at`.
+- **El `while` no despierta, solo re-mira.** Despiertan el **timbre** o el
+  **despertador**; los dos caen en la misma puerta. Y la elección se **repite en
+  cada vuelta**: puede cambiar de `cond_wait` a `timedwait` entre iteraciones.
+- **Pregunta "¿por qué no puedo?" (`state_dongle`), no "¿puedo?"**
+  (`dongles_available`): esa devuelve sí/no y sirve de condición de la puerta, no
+  de diagnóstico del motivo.
+- **Fecha estrictamente futura o giras al 100 %.** Fecha pasada → timeout
+  inmediato → bucle sin dormir. Diagnóstico: `S`/0 % = duerme; `R`/100 % = gira.
 
 ---
 
@@ -87,6 +98,12 @@ Burnout se imprime en < 10 ms del momento real.
 | firma de la rutina | `void *f(void *arg)` exacta; un solo puntero de contexto |
 | struct por valor | siempre `t_coder *`, nunca copia |
 | `n == 1` | válido: `left == right` → nunca coge par → burnout vía monitor |
+| `return int` con `available_at` | época en ms ≈ 1.79 billones > `INT_MAX` → **trunca a negativo** → fecha pasada → giro. Usar `long long` |
+| usar `INFINITY` de centinela | es un macro de `<math.h>` y es un **`float`**; para ms enteros, `-1` con `# define DEADLINE_NEVER` |
+| comprobar `dongles_available` dentro del `while` | es la condición de la puerta: dentro del bucle **siempre es 0** → código muerto |
+| leer `available_at` antes de las guardas | primero "¿me importa?" (`left==right`, `state`), después "¿qué leo?" |
+| `max` vs `min` del `available_at` | **eficiencia**, no corrección: el `while` hace segura cualquier fecha; `max` solo evita despertares inútiles |
+| un `while` sin incremento (`run_simulation`) | al arreglar un cuelgue, re-ejecuta de principio a fin: un bug puede estar **escondido detrás de otro**. El `join` sin `j++` era invisible mientras los hilos no terminaran |
 
 ---
 
@@ -126,3 +143,12 @@ Prohibido: `clock_gettime`, `nanosleep`, `pthread_cond_signal`, libft, globales.
   coger: mide desde que el recurso quedó libre.
 - **¿Quién declara el burnout?** El hilo **monitor** (obligatorio), nunca el
   propio coder.
+- **¿Cómo despierta quien espera a que un dongle termine de enfriarse?**
+  `pthread_cond_timedwait` con la fecha `available_at`: el SO le despierta solo,
+  sin timbre ni hilo relevo.
+- **¿Y si está `BLOCKED`, cómo despierta?** Solo con `broadcast` de quien lo
+  suelta; por eso esa rama usa `cond_wait` sin fecha — no hay fecha que calcular.
+- **¿Qué distingue un cuelgue normal de un busy-spin?** El estado del proceso:
+  `S`/0 % CPU = durmiendo bien; `R`/100 % CPU = fecha pasada, gira sin dormir.
+- **¿Por qué `max` de las dos `available_at` y no `min`?** `max` evita
+  despertares inútiles; la corrección la da el `while`, que vuelve a dormir.

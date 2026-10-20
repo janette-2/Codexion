@@ -41,3 +41,27 @@ void	log_line(t_control *control, const char *message, int id)
 	printf("%d %d %s\n", elapsed, id, message);
 	pthread_mutex_unlock(&(control->mtx_log));
 }
+
+long long	cooldowns_deadline(t_control *control, int left_id, int right_id)
+{
+	long long	at_left;
+	long long	at_right;
+	int			state_left;
+	int			state_right;
+
+	at_left = control->dongles[left_id - 1].available_at;
+	at_right = control->dongles[right_id - 1].available_at;
+	state_left = control->dongles[left_id - 1].state_dongle;
+	state_right = control ->dongles[right_id - 1].state_dongle;
+	if (left_id == right_id)
+		return (DEADLINE_NEVER);
+	if (state_left != DONGLE_FREE || state_right != DONGLE_FREE)
+		return (DEADLINE_NEVER);
+	else
+	{
+		if (at_left > at_right)
+			return (at_left);
+		else
+			return (at_right);
+	}
+}

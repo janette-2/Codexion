@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 2 casi cerrado; hilos corriendo)
+## Estado actual (Hito 2 cerrado; **3.4 y 2.8 cerrados: la simulación termina sola**)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -43,32 +43,59 @@
 - [x] **2.7** `main.c`: `run_simulation` entre `init_sync` y `destroy_sync`; `pthread_join` de los creados antes de destruir nada.
 - [x] Prototipo de `run_simulation` en `codexion.h`.
 
-### Verificación actual
+### Verificación actual (2026-10-21)
 
 - `make re`: sin warnings con `-Wall -Wextra -Werror -pthread` (exit 0).
-- `norminette`: 9/9 OK. `block_dongles` 15, `compiling_phase` 21, `run_simulation` 21 líneas.
-- **Hilos ejecutándose de verdad.** `stdbuf -oL ./codexion 3 3000 50 20 20 1 1 fifo` imprime:
+- `norminette`: 9/9 OK. `block_dongles` ≤ 25 líneas (helper `put_dongles_blocked`
+  extraído a `dongles.c`), `compiling.c` 5/5.
+- **La ejecución completa termina sola.** Criterio de 2.8 cumplido:
 
   ```text
-  0 1 has taken a dongle
-  0 1 has taken a dongle
-  0 1 is compiling
-  51 1 is debugging
-  71 1 is refactoring
+  $ timeout 8 stdbuf -oL ./codexion 3 3000 50 20 20 1 1 fifo
+  0 2 has taken a dongle
+  ...
+  176 3 is refactoring
+  exit=0        15 líneas   3/3 compiles
   ```
 
-  Formato exacto del subject, orden correcto, sin mezclas (gracias a `mtx_log`).
-- **Cuelga después**: el coder 1 termina y sale, el coder 2 sigue dormido en
-  `cond_wait` y nadie suena el timbre al expirar el cooldown. Reproducido también
-  con `./codexion 2 2000 50 30 30 1 10 fifo`. **No es bug de lo hecho: es el
-  micro-objetivo 3.4.**
+- **Cooldown alto (3.4 de verdad):**
+
+  ```text
+  $ timeout 8 stdbuf -oL ./codexion 3 3000 50 20 20 3 300 fifo
+  exit=0        45 líneas   9/9 compiles
+  ```
+
+- **Timestamps:** 0 decrecimientos estrictos; **cada coder estrictamente
+  creciente**. (Hay 18 líneas con el mismo ms entre dos coders distintos: es
+  normal, no es un desorden.)
+- **`n == 1` colgando — y durmiendo de verdad:**
+
+  ```text
+  $ timeout 5 ./codexion 1 500 50 50 50 1 10 edf   →  exit=124   (esperado: falta monitor)
+  $ ps -o %cpu,stat,wchan -C codexion               →  0.0 %  Sl  futex_wait
+  ```
+
+  Estado `Sl` + 0 % = **duerme**. Es la prueba de que no hay busy-spin: si la
+  fecha fuera pasada, sería estado `R` a ~100 % CPU.
+- **Validación de argumentos:** `0`, `x`, aridad incorrecta y scheduler inválido
+  → todos `exit=1`.
+- **Valgrind:** `All heap blocks were freed -- no leaks are possible`,
+  `ERROR SUMMARY: 0 errors`.
 
 ### Deuda pendiente
 
-- [ ] **3.4 — el cooldown sin timbre (bloqueante para observar una ejecución completa).** Un dongle `FREE` pero en enfriamiento no avisa a nadie al expirar; si el último coder activo sale, los dormidos no despiertan y `pthread_join` no vuelve. Ver `TEORIA.md` sección 9.3.
-- [ ] **2.8/2.9** pendientes: la ejecución completa con 3 hilos y el flag `simulation_status` en el bucle de `coder_routine`.
+- [x] **3.4 — el cooldown sin timbre.** **CERRADO (2026-10-21).** `block_dongles`
+  decide dentro del `while`: `cooldowns_deadline` → `DEADLINE_NEVER` ⇒ `cond_wait`;
+  fecha ⇒ `ms_to_timespec` + `pthread_cond_timedwait`. Verificado con cooldown 300:
+  `exit=0`, 9/9 compiles, y `n == 1` durmiendo al 0 % CPU.
+- [x] **2.8** Ejecución completa con 3 hilos. **CERRADO (2026-10-21):** `exit=0`
+  con `./codexion 3 3000 50 20 20 1 1 fifo` y con cooldown 300.
+- [ ] **2.9** pendiente: el flag `simulation_status` en el bucle de `coder_routine`.
 - [ ] `printf` a un pipe se bufferiza por bloques (en terminal va por líneas). Para testear redirigido: `stdbuf -oL`. Pendiente decidir si afecta a la precisión del log de burnout (Hito 6/7).
-- [ ] Andamiaje adelantado y aún sin cablear: `ms_to_timespec` (`simulation.c`) y `cooldown_available_time_dongle` (`dongles.c`) están definidas y prototipadas pero **nadie las llama**; `DONGLE_COOLDOWN` **nunca se asigna**. Son la base del reloj del cooldown (3.4). No rompen el build ni la Norma, pero conviene decidir si se usan o se retiran al cerrar 3.4.
+- [ ] Andamiaje adelantado y aún sin cablear: `cooldown_available_time_dongle`
+  (`dongles.c`) y `DONGLE_COOLDOWN` siguen sin usarse (`DONGLE_COOLDOWN` nunca se
+  asigna). `ms_to_timespec` y `cooldowns_deadline` **ya están cableados**. Conviene
+  decidir si se usa o se retira lo que queda al cerrar el 2.9.
 - [x] ~~`pthread_cond_broadcast` ausente en la devolución.~~ Cerrado.
 - [x] ~~Código muerto: `block_dongles` en `int` + `if` siempre cierto.~~ Cerrado, ahora `void`.
 - [x] ~~Faltaban los dos `LOG_TAKEN`.~~ Cerrados, en orden correcto.
@@ -80,7 +107,7 @@
 
 ### Falta (núcleo concorrente por delante)
 
-El reloj del cooldown (3.4), `simulation_status` (2.9), colas heap FIFO/EDF (Hito 4–5), monitor y terminación (Hito 6), estrés y errores (Hito 7).
+`simulation_status` (2.9), colas heap FIFO/EDF (Hito 4–5), monitor y terminación (Hito 6), estrés y errores (Hito 7).
 
 ---
 
@@ -163,7 +190,7 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 - [x] **2.5** Fase de refactor: log `is refactoring` → `usleep(time_to_refactor * 1000)` → vuelta inmediata al bucle. **Hecho.**
 - [x] **2.6** `run_simulation(t_control *)`: crea los N hilos con `&control->coders[i]`, para en el primer fallo de `pthread_create` y usa `i` como contador de creados. **Hecho** en `coders.c` (21 líneas).
 - [x] **2.7** `main.c`: `run_simulation` tras `init_sync`; `pthread_join` de los creados (dentro de `run_simulation`) antes de `destroy_sync`/`free_control`. **Hecho.**
-- [ ] **2.8** Smoke test: `./codexion 3 3000 50 20 20 1 1 fifo` imprime el ciclo con timestamps crecientes. **Primera salida observada y correcta**, pero **cuelga tras el primer ciclo** por el cooldown sin timbre (3.4). Cerrar 3.4 antes de dar 2.8 por bueno.
+- [x] **2.8** Smoke test: `./codexion 3 3000 50 20 20 1 1 fifo` imprime el ciclo con timestamps crecientes. **CERRADO (2026-10-21):** `exit=0`, 3/3 compiles; y con cooldown 300, `exit=0` con 9/9 compiles.
 - [ ] **2.9** Añadir flag `stop`/`simulation_status = SIM_STOPPED` accesible de forma thread-safe para cortar bucles (aunque el monitor real llegue en el Hito 6).
 
 ### Hallazgos del Hito 2
@@ -198,7 +225,23 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 - **`pthread_join` antes de destruir.** Unir todos los creados antes de `destroy_sync`/`free_control`: destruir mutex/cond con hilos vivos es usar objetos destruidos.
 - **El orden de creación no es el orden de ejecución.** Al salir del bucle, los hilos ya están corriendo; el primero puede llevar ventaja. No se puede asumir quién compila antes.
 - **La salida a un pipe se bufferiza por bloques.** `printf` en terminal va por líneas, pero a un pipe (o redirección) se acumula y no se ve hasta el final; un `timeout` mata el proceso sin volcar el buffer. Para testear redirigido: `stdbuf -oL ./codexion ...`. En terminal la precisión de ms se mantiene.
-- **La primera ejecución real cuelga, y es informativo.** Con `./codexion 2 2000 50 30 30 1 10 fifo`, el coder 1 completa su ciclo (logs perfectos) y el coder 2 queda dormido: el cooldown expira pero nadie suena el timbre, y con el coder 1 fuera no hay quien lo haga. Es el **3.4**, no un fallo de 2.6/2.7.
+- **La primera ejecución real cuelga, y es informativo.** Con `./codexion 2 2000 50 30 30 1 10 fifo`, el coder 1 completa su ciclo (logs perfectos) y el coder 2 queda dormido: el cooldown expira pero nadie suena el timbre, y con el coder 1 fuera no hay quien lo haga. Es el **3.4**, no un fallo de 2.6/2.7. *(Resuelto con el 3.4, 2026-10-21.)*
+- **Un bug puede quedarse escondido detrás de otro.** En `run_simulation`, el
+  bucle de `pthread_join` **no tenía el incremento de `j`**:
+
+  ```c
+  j = 0;
+  while (j < i)
+      pthread_join(control->coders[j++].coder_pthread, NULL);   /* el ++ es lo nuevo */
+  ```
+
+  Ese bug **no se veía nunca** porque, mientras los hilos no terminaran, el primer
+  `join` se bloqueaba para siempre y el bucle no llegaba a dar una segunda vuelta.
+  Al cerrar el 3.4 los tres hilos salieron, el `join` devolvió, y entonces el bucle
+  **giró al ~70 % CPU** con solo 1 tarea viva en `/proc/PID/task`. Diagnóstico útil:
+  - `ps -L -o lwp,stat,wchan -p <pid>` → todas las worker `Z`/ausentes y main en `R` = el giro está en `main`, no en un hilo.
+  - **Estado `R` + `wchan=0` = gira; estado `S`/`Sl` + `futex_wait` = duerme.** Es lo mismo que distingue un busy-spin de un cooldown correcto: *siempre* mira el estado, no solo el `exit`.
+  - Regla para la defensa: **al arreglar un cuelgue, re-ejecuta de principio a fin.** No basta con que desaparezca el síntoma viejo; puede haber otro esperando debajo.
 
 ### Adquisición — CERRADA (adelantada del Hito 3)
 
@@ -212,7 +255,7 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
 
 - Salida con formato correcto, mensajes sin mezclar (gracias a `mtx_log`).
 - La simulación termina por `number_of_compiles_required` y no por crash.
-- Sin fugas: `valgrind --leak-check=full ./codexion 2 500 10 10 10 1 1 fifo` limpio (hilos unidos). Ojo: con cooldown > 0 la ejecución cuelga hoy (3.4); para medir fugas hay que cortar el proceso y el reporte de hilos vivos no es representativo hasta cerrar 3.4 y el monitor.
+- Sin fugas: `valgrind --leak-check=full ./codexion 2 500 10 10 10 1 1 fifo` limpio (hilos unidos) — `All heap blocks were freed`, `ERROR SUMMARY: 0 errors`. *(Medido ya sin cortar el proceso, tras cerrar 3.4.)*
 - `norminette` en verde.
 
 ---
@@ -221,20 +264,74 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
 
 **Objetivo:** el corazón del proyecto. Nadie compila sin dos dongles; nadie retiene uno esperando el segundo (anti-deadlock); el cooldown se respeta sin `usleep` bajo mutex.
 
-> **Estado adelantado (mitad del Hito 2):** 3.1, 3.2, 3.3 y 3.6 están **hechos** — ver la sección "Adquisición — CERRADA" del Hito 2 y el "Mapa visual" al final. Pendientes reales: **3.4 (el reloj del cooldown)** — hoy el dongle en enfriamiento solo se comprueba al despertar, y nadie suena el timbre cuando el cooldown expira; con todos los coders dormidos esperando enfriamiento el programa se cuelga. Es el riesgo principal que queda. Después, 3.5 (n==1, necesita el monitor) y los tests 3.7/3.8 (necesitan hilos).
+> **Estado (2026-10-21):** 3.1, 3.2, 3.3, **3.4** y 3.6 están **hechos**. La
+> ejecución completa termina sola (`exit=0`). Pendientes reales: **3.5** (el caso
+> `n == 1`, que necesita el monitor), y los tests 3.7/3.8. Ver la sección
+> "Verificación actual" para el detalle de lo que ya pasa.
 
 ### Micro-objetivos
 
 - [x] **3.1** Protocolo de adquisición en `mtx_dongles`: comprobar **ambos** dongles (`FREE` y `current_time >= available_at`); si no, `pthread_cond_wait(&cond_dongles, &mtx_dongles)`. **Jamás** tomar uno y esperar el otro. **Hecho** en `block_dongles`.
 - [x] **3.2** Al adquirir: marcar ambos `BLOCKED`, log dos veces `has taken a dongle` (fuera de la sección crítica, con `mtx_log` dentro de `log_line`), salir de la sección crítica y solo entonces compilar. **Hecho.**
 - [x] **3.3** Al liberar (tras compile): entrar en `mtx_dongles`, marcar ambos `FREE`, `available_at = current_time() + dongle_cooldown`, `pthread_cond_broadcast`, salir. **Hecho.** Nota: no se usa el estado `DONGLE_COOLDOWN`; el enfriamiento lo expresa `available_at`, porque `dongle_ready` exige estado `FREE`.
-- [ ] **3.4** Gestión del cooldown sin dormir bajo mutex: quien encuentra un dongle en enfriamiento espera en la condvar. Como `pthread_cond_timedwait` **sí** está autorizada, usarla con un `pthread_mutex_t` + `timespec` calculado desde `available_at` (evita un hilo relevo y clava la precisión). Alternativa: un "relevo" que haga `usleep` el cooldown más corto y luego `broadcast`. **PENDIENTE — es el riesgo de cuelgue actual**: nadie suena el timbre cuando el cooldown expira.
+- [x] **3.4** Gestión del cooldown sin dormir bajo mutex. **CERRADO (2026-10-21).**
+  `cooldowns_deadline` (`resources.c`, 5/5) devuelve `DEADLINE_NEVER -1` si
+  `left == right` o si alguno de los dos no está `FREE` (es decir, `BLOCKED`), y
+  `max(available_at)` si ambos están `FREE`; retorno `long long` (el `int`
+  truncaría la época en ms). Dentro del `while` de `block_dongles`: `DEADLINE_NEVER`
+  ⇒ `cond_wait`; fecha ⇒ `ms_to_timespec` + `pthread_cond_timedwait`. La decisión
+  **se repite en cada vuelta**. `compiling.c` se pasó de 25 líneas y el código de
+  marcar el par se extrajo a `put_dongles_blocked` (`dongles.c`).
+  Verificado: cooldown 300 → `exit=0`, 9/9 compiles; `n == 1` → 0 % CPU, estado `Sl`.
 - [ ] **3.5** Caso `number_of_coders == 1`: un solo dongle, el coder nunca puede adquirir el par → debe caer en burnout vía monitor (Hito 6); aquí basta con que **no** se cuelgue: la condvar + monitor lo resolverá. No usar el mismo dongle dos veces, no bloquear el mismo mutex dos veces.
 - [x] **3.6** `dongles_available` con la lógica correcta (estado + `available_at <= now`). **Hecho ya en 1.8** (`dongle_ready` + guard `left_id == right_id`); se cierra aquí para no arrastrar un falso pendiente.
 - [ ] **3.7** Test manual: `./codexion 4 800 200 150 100 3 50 fifo` — verificar que cada `is compiling` está precedido de exactamente dos `has taken a dongle` y que nunca hay dos `is compiling` simultáneos para el mismo dongle (revisar logs).
 - [ ] **3.8** Test de estrés de deadlock: `./codexion 5 200 50 10 10 5 30 fifo` en bucle 20 veces; el programa nunca debe colgarse indefinidamente (si alguien se agota, es comportamiento esperado y deberá imprimirse — llega completo en Hito 6; de momento basta con que no haya hang).
 
-### Criterios de aceptación del Hito 3
+### Hallazgos del 3.4 — elegir cómo dormir
+
+> Esta es la lección de concurrencia más importante de la sesión. No es "cómo se
+> llama la función", es **por qué hay dos** y cómo sabes cuál toca.
+>
+> **Estado: ya implementado y verificado el 2026-10-21.** Se usa `timedwait`
+> (descartado el hilo relevo).
+
+**1. Hay dos motivos distintos de "no disponible", y se esperan de forma distinta.**
+
+| situación | quién/desde cuándo te saca de ahí | ¿hay fecha? | espera |
+|---|---|---|---|
+| `BLOCKED` — otro coder lo tiene en la mano | solo el `broadcast` de quien lo suelta | **no** | `cond_wait` (infinita) |
+| `FREE` + `available_at` futuro — enfriando | **pasa el tiempo** y llega la fecha | **exacta** | `pthread_cond_timedwait` |
+
+- En `BLOCKED` **no puedes calcular nada**: "¿cuándo acabará de compilar el otro?" no lo sabe nadie. Calcularle fecha es inventar.
+- En cooldown **el reloj es el evento**. Nadie hace nada en `available_at`; simplemente llega la hora.
+
+**2. El `while` NO despierta a nadie.** Solo **revisa**. Los únicos que despiertan son dos, de naturaleza distinta: el **timbre** (`broadcast`, solo si alguien suelta algo) y el **despertador** (el timeout del `timedwait`, marcado por ti). **Ambos caen en la misma condición del `while`**, que decide si avanza o vuelve a dormir.
+
+**3. La función de sueño se reelige en CADA vuelta.** No es una elección única. El mismo hilo puede dormir con `cond_wait` en la vuelta 1 (mientras el otro compila) y con `timedwait` en la vuelta 2 (cuando ya solo falta el cooldown). Por eso las dos conviven dentro del mismo `while`.
+
+**4. Pregunta equivocada, función equivocada.** Primer intento: `if (dongles_available(...) != 0) return NEVER`. Falla por dos vías:
+- `dongles_available` responde **"¿puedo?"** (sí/no). La decisión de espera necesita **"¿por qué no?"** (el motivo). No distingue `BLOCKED` de enfriamiento — devuelve "no" en los dos casos.
+- **Código muerto**: el `while` es `dongles_available(...) == 0`, así que dentro del bucle esa condición **nunca** se cumple. Quien decide es `state_dongle != DONGLE_FREE`.
+- Regla para la defensa: **`dongles_available` es la condición de la puerta; `cooldowns_deadline` es el diagnóstico del motiv**o. Dos preguntas distintas.
+
+**5. Tres bugs distintos, UN solo síntoma: busy-spin.** Cualquier fecha que **no sea estrictamente futura** hace que `pthread_cond_timedwait` devuelva timeout **al instante** → vuelta al `while` → otro timeout → giro al 100 % de CPU sin dormir nunca. Los tres caminos:
+- Retorno `int` para `available_at` (**época en ms ≈ 1.79 billones > `INT_MAX` ≈ 2.1 mil millones**) → trunca y probablemente a negativo.
+- `available_at` **viejo** de un dongle `BLOCKED` (fecha de una liberación anterior, o `0` inicial).
+- **`n == 1`**: `available_at = 0` y la indisponibilidad viene del guard `left == right`, **no** del tiempo → fecha de 1970 → giro. Por eso `left == right` → `DEADLINE_NEVER` **no es opcional**.
+- Diagnóstico: **duerme sano = estado `S`, 0 % CPU**. **Gira = estado `R`, ~100 % CPU.** `ps -o %cpu,stat,comm -C codexion` lo separa en un segundo.
+
+**6. `INFINITY` no es una opción.** Es una macro de `<math.h>` que es un **`float`**, no está en la lista de funciones autorizadas y no sirve para milisegundos enteros. Los timestamps del epoch son siempre ≥ 0 → `-1` como centinela, con `# define DEADLINE_NEVER -1` en `codexion.h` (mismo principio que `LOG_*`: **el valor se define en un solo sitio**).
+
+**7. `max(available_at)` es eficiencia, no corrección.** Con `min` te despertarías pronto, re-comprobarías con el `while` y te volverías a dormir: **correcto, solo que te levantas en vano**. El `while` hace segura cualquier fecha; el `max` elimina los despertares inútiles. Esto quita el miedo a "¿y si elijo mal?": la corrección la da el bucle, no la fecha.
+
+**8. Por qué `available_at` sirve de fecha absoluta.** `pthread_cond_timedwait` cuenta en **`CLOCK_REALTIME`**; `current_time()` lee `gettimeofday`, **el mismo reloj**. Por eso `available_at` es una fecha válida para el wait. Límite conocido: `CLOCK_REALTIME` puede saltar con NTP — en una simulación de ms es aceptable, pero conviene poder decirlo en la defensa.
+
+**9. Norma: dónde vive el helper.** `compiling.c` está en **5/5**, no admite funciones nuevas. El helper va a `resources.c` (queda en 4/5), porque es familia de `dongle_ready`/`dongles_available`. Y se llama **dentro de `mtx_dongles`**: lee estado compartido y no lleva lock propio — déjalo escrito junto al prototipo. Si al cablear `block_dongles` se pasa de **25 líneas**, la salida es un `wait_for_pair` en `sync.c` (3 funciones, hueco para 2, y es donde temáticamente va una espera sobre la condvar).
+
+**10. Guardas antes que cálculos.** El primer borrador leía `at_left`/`at_right`/`state_*` y *luego* comprobaba `left_id == right_id`. Sin bug hoy, pero el orden correcto es **primero "¿me importa?", después "¿qué leo?"** — sobre todo porque son lecturas de estado compartido.
+
+
 
 - Cero interbloqueos en 20 ejecuciones consecutivas del test de estrés.
 - El cooldown es observable: tras liberar, el mismo dongle no vuelve a aparecer tomado antes de `dongle_cooldown` ms (comparar timestamps en logs).
@@ -350,22 +447,38 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
 
 ---
 
-## Próximo paso: **3.4 — el reloj del cooldown**
+## Próximo paso: **2.9 — `simulation_status` thread-safe**
 
-Hito 1 cerrado. Hito 2: 2.0–2.7 hechos (hilos creados, unidos y corriendo de verdad), más la adquisición adelantada del Hito 3. Quedan **3.4** (bloqueante) y 2.8/2.9.
+Hito 1 cerrado. Hito 2 cerrado. Hito 3: 3.1–3.4 y 3.6 cerrados. Quedan **3.5**
+(y los tests 3.7/3.8), 2.9, y los Hitos 4–8.
 
-Estado real tras la primera ejecución: los logs salen con el formato exacto y orden correcto, y el programa **cuelga después del primer ciclo** porque un dongle `FREE` en enfriamiento no avisa a nadie al expirar. Cerrar eso permite ver una ejecución completa.
+**Estado de `simulation_status` hoy:** se inicializa a `1` en `init.c` y
+**nadie lo lee**. Es el único campo que queda sin consumir, y es el que permite
+parar sin cuelgar.
 
 Orden recomendado:
 
-1. **3.4** Despertar al expirar el cooldown. Elegir entre `pthread_cond_timedwait` (dormir hasta `available_at`) o un hilo relevo. Ver `TEORIA.md` sección 9.3.
-2. **2.8** Ejecución completa con 3 hilos — los logs reales de todos compitiendo.
-3. **2.9** Flag `simulation_status` thread-safe y su comprobación en `coder_routine`.
-4. **Hito 6** Monitor: sin él, `./codexion 1 ...` y cualquier burnout cuelgan.
+1. **2.9** Comprobar `simulation_status` en `coder_routine` al inicio de cada
+   vuelta y salir del bucle si no está en `SIM_RUNNING`. Pregunta de razonamiento
+   antes de tocar nada: **¿hace falta un mutex para leerlo, o basta con un
+   `int`?** Piensa en quién lo escribe (el monitor, Hito 6), en cuándo lo escribe
+   respecto a las escrituras, y en qué ves en un `int` de 4 bytes. Prepara tu
+   respuesta: es una pregunta clásica de defensa.
+2. **3.5** El caso `n == 1` deja de colgar para siempre: el monitor detecta
+   burnout, loguea y fija el flag. Hoy cuelga **con 0 % CPU** (durmiendo bien),
+   que es el estado correcto hasta tener monitor.
+3. **Hito 6** Monitor + terminación: sin él, `./codexion 1 ...` y cualquier
+   burnout cuelgan.
+4. **Hitos 4–5** Colas heap FIFO/EDF. **Hito 7** Estrés/valgrind/TSan.
 
 Advertencias de prueba:
-- `./codexion 1 ...` se colgará aunque todo lo demás funcione: es el burnout en espera del monitor (Hito 6). No confundir un hang esperado con un bug.
-- El parser rechaza `0` en **todos** los argumentos, incluido `dongle_cooldown`: no se puede testear con cooldown 0. Usar un cooldown pequeño y ser consciente del cuelgue de 3.4.
+- **Cómo distinguir "duerme bien" de "gira":** `ps -o %cpu,stat,wchan -C codexion`.
+  `Sl` + `futex_wait` + 0 % = durmiendo (correcto). `R` + `wchan=0` + ~100 % =
+  gira: fecha pasada en el `timedwait`, o un bucle sin incremento (el bug que
+  hubo en `run_simulation`). **Este test separa los tres fallos de una mirada.**
+- `./codexion 1 ...` sigue colgando hasta el Hito 6: es el burnout esperando al
+  monitor. **No es un bug nuevo**; debe seguir durmiendo al 0 %.
+- El parser rechaza `0` en **todos** los argumentos, incluido `dongle_cooldown`: no se puede testear con cooldown 0. Para observar el cooldown usar uno **alto** (300).
 - Para ver la salida redirigida: `stdbuf -oL ./codexion ...` (si no, el buffer se pierde al matar el proceso).
 
 ---
@@ -510,7 +623,7 @@ cambio de estado:
 Mientras 1 compila, 2 duerme en la condvar sin gastar CPU. El timbre de 1 es lo
 que arranca a 2. Ese es el ciclo entero del proyecto.
 
-### 5. El peligro que queda: el cooldown sin timbre (micro-objetivo 3.4)
+### 5. El peligro que ya estaba: el cooldown sin timbre (3.4 — RESUELTO)
 
 ```text
  ms    HILO 1                                HILO 2
@@ -524,13 +637,20 @@ que arranca a 2. Ese es el ciclo entero del proyecto.
        AMBOS DORMIDOS -> pthread_join no vuelve -> el programa CUELGA
 ```
 
-El `broadcast` avisa cuando un dongle **se libera**, pero no cuando **termina de
-enfriarse**. Faltan dos piezas posibles (elegir una en 3.4):
+**Ese era el problema. La solución aplicada:**
 
-- `pthread_cond_timedwait` con un `timespec` calculado desde `available_at`:
-  el hilo duerme exactamente lo que queda de enfriamiento y se despierta solo.
-- Un hilo "relevo" que duerme lo que dure el cooldown más corto y suena el
-  timbre al terminar.
+```text
+       dentro del while, CADA vuelta:
+           deadline = cooldowns_deadline(...)      ← ¿por qué no puedo?
+           si  deadline == DEADLINE_NEVER (-1)  -> cond_wait        (TIMBRE)
+           si  hay fecha futura                 -> cond_timedwait  (DESPERTADOR)
+                                                    hasta available_at
+       al despertar, el while RE-MIRA. Sirve el timbre o el despertador.
+```
+
+El `broadcast` avisa cuando un dongle **se libera**; el `timedwait` cubre
+**cuando termina de enfriarse**. Las dos fuentes de despertar conviven dentro del
+mismo bucle, y la elección se repite en cada vuelta.
 
 ### 6. Propósito de cada decisión (para la defensa)
 
@@ -546,6 +666,10 @@ enfriarse**. Faltan dos piezas posibles (elegir una en 3.4):
 | logs fuera de la sección crítica | `log_line` bloquea `mtx_log` por dentro: llamarlo con `mtx_dongles` puesto anida dos llaves, y bloquear `mtx_log` a mano alrededor sería doble lock del mismo hilo (auto-cuelgue). Además el log es un informe, no una negociación. |
 | `block_dongles` devuelve `void` | el `while` garantiza el par al salir: no hay camino de fallo. El caso `n==1` no devuelve 0, simplemente **no vuelve nunca** (lo remata el monitor). |
 | `number_of_compiles_done++` al final | cuenta compilaciones **terminadas**: si sube al empezar, un lector (el monitor) ve trabajo que aún no ocurrió. |
+| `timedwait` y no hilo relevo | `available_at` es una fecha absoluta sobre el mismo `CLOCK_REALTIME` que usa `timedwait`, y `ms_to_timespec` ya existía. Un relevo dormiría y además inventaría un segundo mecanismo de despertar. |
+| `DEADLINE_NEVER` para `BLOCKED` y para `left == right` | no hay fecha calculable. Usar la `available_at` vieja de un `BLOCKED` (o el `0` inicial de `n==1`) daría una fecha pasada → `timedwait` en timeout perpetuo → **busy-spin al 100 % CPU** en vez de dormir. |
+| `long long` para el deadline | la época en ms son ~1.79 billones y `INT_MAX` es ~2.1 mil millones: con `int` se trunca a un valor del pasado. |
+| helper `put_dongles_blocked` en `dongles.c` | `compiling.c` estaba en 5/5 y `block_dongles` se pasaba de 25 líneas con la rama nueva. El código de marcar el par no aporta a la espera, así que fue lo natural de sacar. |
 
 ---
 

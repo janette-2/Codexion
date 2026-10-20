@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/19 21:55:08 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/20 23:52:47 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -29,6 +29,8 @@
 # define LOG_DEBUGGING "is debugging"
 # define LOG_REFACTORING "is refactoring"
 # define LOG_BURNEDOUT "burned out"
+
+# define DEADLINE_NEVER  -1
 
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
@@ -81,6 +83,7 @@ int			init_dongles(t_control *control);
 void		dongles_assignation(t_control *control);
 void		cooldown_available_time_dongle(
 				t_dongle *dongle, t_control *control);
+void		put_dongles_blocked(t_coder *coder);
 
 /* CODERS.C */
 void		coder_args(t_coder *coder, int i, t_control *control);
@@ -99,6 +102,7 @@ void		destroy_sync(t_control *control, int created);
 int			dongles_available(t_control *control, int left_id, int right_id);
 int			dongle_ready(t_dongle *dongle);
 void		log_line(t_control *control, const char *message, int id);
+long long	cooldowns_deadline(t_control *control, int left_id, int right_id);
 
 /* COMPILING.C */
 void		block_dongles(t_coder *coder);

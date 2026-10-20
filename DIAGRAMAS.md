@@ -2,8 +2,9 @@
 
 > Diagramas del ciclo del coder y de la sincronización. Se renderizan como dibujo
 > en GitHub, GitLab y VS Code (con extensión de Mermaid).
-> Estado: hilos creados, unidos y corriendo (2.6/2.7 cerrados); adquisición
-> cerrada. Falta el timbre del cooldown (3.4): el cuelgue real está en la sección 6.
+> Estado: **Hito 2 cerrado; 3.4 y 2.8 cerrados.** `cooldowns_deadline` +
+> `pthread_cond_timedwait` cableados y verificados (`exit=0`). La sección 6 es el
+> problema que había; la 6b es la solución aplicada.
 
 ---
 
@@ -134,7 +135,7 @@ Log que produce el tramo (formato del subject):
 
 ---
 
-## 6. El cuelgue del cooldown sin timbre (micro-objetivo 3.4)
+## 6. El cuelgue del cooldown sin timbre — **ya resuelto** (3.4)
 
 ```mermaid
 flowchart TD
@@ -147,9 +148,40 @@ flowchart TD
 ```
 
 El `broadcast` avisa cuando un dongle **se libera**, no cuando **termina de
-enfriarse**. Solución (ver CONTROL.md, 3.4):
-`pthread_cond_timedwait` con un `timespec` calculado desde `available_at`, o un
-hilo relevo que suene al expirar.
+enfriarse**. Ese es el cuelgue que existía. La solución aplicada (ver
+`CONTROL.md`, "Hallazgos del 3.4"): `pthread_cond_timedwait` con un `timespec`
+calculado desde `available_at`. **Implementado y verificado el 2026-10-21.**
+
+---
+
+## 6b. La solución: dos motivos, dos funciones, un solo `while` (aplicada)
+
+```mermaid
+flowchart TD
+    W["while (par NO disponible)"] --> D["cooldowns_deadline(...)<br/>¿por qué no puedo?"]
+    D --> N{"¿fecha calculable?"}
+    N -- "left == right<br/>o state != FREE" --> CW["cond_wait<br/>TIMBRE: solo si alguien suelta"]
+    N -- "ambos FREE<br/>→ max(available_at)" --> TW["cond_timedwait<br/>DESPERTADOR: marca la hora"]
+    CW --> BACK["vuelve al while y RE-MIRA"]
+    TW --> BACK
+    BACK --> W
+```
+
+Dos reglas del dibujo:
+
+- **El `while` no despierta**: solo re-mira. Despiertan el **timbre** y el
+  **despertador**, y los dos caen en la misma puerta.
+- **La elección se repite en cada vuelta**: puede cambiar de `cond_wait` a
+  `timedwait` entre iteraciones sin que el bucle se entere.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Dormido
+    Dormido --> Dormido : timeout con fecha PASADA<br/>(gira, 100 % CPU ✗)
+    Dormido --> Revisa : timbre O despertador OK
+    Revisa --> Dormido : aún no disponible
+    Revisa --> Coge : par disponible
+```
 
 ---
 
@@ -172,4 +204,6 @@ mindmap
       while, no if, en el wait
       broadcast tras el cambio de estado
       ms son microsegundos en usleep
+      ¿Por qué no puedo? (state), no ¿puedo?
+      Fecha estrictamente futura o gira al 100 %
 ```
