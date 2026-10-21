@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 15:34:26 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 18:24:03 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -35,10 +35,10 @@ int	main(int argc, char *arg[])
 	control.dongles = NULL;
 	if (check_args(argc, arg, &control) == 1)
 		return (1);
+	control.start_time = current_time();
 	if (init_coders(&control) == -1 || init_dongles(&control) == -1)
 		return (free_control(&control), 1);
 	dongles_assignation(&control);
-	control.start_time = current_time();
 	created = 0;
 	if (init_sync(&control) != 0)
 		return (free_control(&control), 1);

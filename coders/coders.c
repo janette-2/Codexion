@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 16:24:55 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/20 23:55:04 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 18:25:13 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,7 +16,7 @@ void	coder_args(t_coder *coder, int i, t_control *control)
 {
 	coder->id = i;
 	coder->number_of_compiles_done = 0;
-	coder->last_compilation = 0;
+	coder->last_compilation = control->start_time;
 	coder->control = control;
 	coder->left_dongle = 0;
 	coder->right_dongle = 0;
@@ -57,9 +57,11 @@ int	run_simulation(t_control *control)
 			break ;
 		i++;
 	}
+	pthread_create(&control->monitor_pthread, NULL, monitor_routine, control);
 	j = 0;
 	while (j < i)
 		pthread_join(control->coders[j++].coder_pthread, NULL);
+	pthread_join(control->monitor_pthread, NULL);
 	if (i == control->number_of_coders)
 		return (0);
 	return (1);

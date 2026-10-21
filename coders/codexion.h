@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 15:44:39 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 18:45:11 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,8 +31,9 @@
 
 # define DEADLINE_NEVER  -1
 
-# define SIM_RUNNING 1
-# define SIM_STOPPED 0
+# define SIM_RUNNING 0
+# define SIM_STOPPED 1
+# define SIM_FINISHED 2
 
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
@@ -69,6 +70,7 @@ struct s_control
 	int				dongle_cooldown;
 	int				simulation_status;
 	long long		start_time;
+	pthread_t		monitor_pthread;
 	t_coder			*coders;
 	t_dongle		*dongles;
 	pthread_mutex_t	mtx_dongles;
@@ -93,6 +95,7 @@ int			run_simulation(t_control *control);
 /* SIMULATION.C */
 long long	current_time(void);
 void		ms_to_timespec(long long ms, struct timespec *when);
+void		*monitor_routine(void *arg);
 
 /* SYNC.C */
 int			init_sync(t_control *control);
