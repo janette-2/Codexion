@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/20 23:52:47 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 15:44:39 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -22,7 +22,6 @@
 
 # define DONGLE_BLOCKED 0
 # define DONGLE_FREE 1
-# define DONGLE_COOLDOWN 2
 
 # define LOG_TAKEN "has taken a dongle"
 # define LOG_COMPILING "is compiling"
@@ -31,6 +30,9 @@
 # define LOG_BURNEDOUT "burned out"
 
 # define DEADLINE_NEVER  -1
+
+# define SIM_RUNNING 1
+# define SIM_STOPPED 0
 
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
@@ -50,9 +52,9 @@ struct s_coder
 
 struct s_dongle
 {
-	int			state_dongle; //0 for blocked, 1 for free, 2 for cooldown
+	int			state_dongle; //DONGLE_BLOCKED or DONGLE_FREE
 	int			dongle_id;
-	long long	available_at;
+	long long	available_at; //cooldown instant; dongle is FREE but not ready
 };
 
 struct s_control
@@ -81,8 +83,6 @@ int			check_args(int argc, char **arg, t_control *control);
 void		dongles_args(t_dongle *dongle, int i);
 int			init_dongles(t_control *control);
 void		dongles_assignation(t_control *control);
-void		cooldown_available_time_dongle(
-				t_dongle *dongle, t_control *control);
 void		put_dongles_blocked(t_coder *coder);
 
 /* CODERS.C */

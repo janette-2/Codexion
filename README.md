@@ -173,9 +173,6 @@ Responsible for:
 - Applying the circular nominal topology (`dongles_assignation`).
 - `put_dongles_blocked`: marking the acquired pair as in use, called from
   `block_dongles` while the dongle mutex is held.
-- `cooldown_available_time_dongle`: written for the cooldown clock, but **not
-  yet called by anyone** (see "Open items"). The release path writes the
-  timestamp directly instead.
 
 ### `compiling.c`
 
@@ -277,25 +274,24 @@ A dongle stores:
 
 - Its identifier.
 - Its current state.
+- The instant at which it becomes available again (`available_at`).
 
 The possible states are conceptually:
 
 ```text
 BLOCKED
-FREE
-COOLDOWN
+FREE (possibly still cooling until available_at)
 ```
 
 The current code represents the states with named `#define` constants:
-`DONGLE_BLOCKED`, `DONGLE_FREE` and `DONGLE_COOLDOWN`. This avoids numeric
-magic values while keeping the state type simple. A C `enum` has not yet been
-introduced in the current implementation.
+`DONGLE_BLOCKED` and `DONGLE_FREE`. This avoids numeric magic values while
+keeping the state type simple. A C `enum` has not yet been introduced in the
+current implementation.
 
-Only `BLOCKED` and `FREE` are written by the simulation today. `DONGLE_COOLDOWN`
-is declared but **never assigned**: the cooldown is expressed by the
-`available_at` timestamp instead, so a cooling dongle keeps the `FREE` state. A
-dedicated `COOLDOWN` state is deliberately avoided because nothing would return
-the dongle to `FREE`.
+The cooldown is expressed by the `available_at` timestamp rather than a dedicated
+`COOLDOWN` state: a cooling dongle keeps the `FREE` state but is not ready until
+`current_time` reaches `available_at`. A dedicated `COOLDOWN` state is
+deliberately avoided because nothing would return the dongle to `FREE`.
 
 The dongles are also stored in a dynamically allocated array.
 
@@ -914,10 +910,9 @@ Important constraints include:
 - A coder with `number_of_coders = 1` waits forever for its second dongle by
   design; only the monitor (Hito 6) can end that situation. It sleeps correctly
   (0 % CPU) rather than spinning.
-- Dead code carried ahead of its wiring: `cooldown_available_time_dongle` is
-  defined and prototyped but never called, and the `DONGLE_COOLDOWN` state is
-  never assigned. `simulation_status` is set to `1` in `init.c` and never read
-  (2.9).
+- `simulation_status` is set to `SIM_RUNNING` in `init.c` and checked by
+  `coder_routine`, but nothing writes `SIM_STOPPED` yet: the monitor (Hito 6) is
+  what will set it on burnout or completion.
 
 ---
 

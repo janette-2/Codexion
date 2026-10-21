@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 17:02:56 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/20 23:50:48 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 15:44:32 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -62,12 +62,6 @@ void	dongles_assignation(t_control *control)
 		}
 		i++;
 	}
-}
-
-void	cooldown_available_time_dongle(t_dongle *dongle, t_control *control)
-{
-	if (dongle->state_dongle == DONGLE_COOLDOWN)
-		dongle->available_at = current_time() + control->dongle_cooldown;
 }
 
 void	put_dongles_blocked(t_coder *coder)

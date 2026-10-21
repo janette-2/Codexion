@@ -90,12 +90,16 @@
   `exit=0`, 9/9 compiles, y `n == 1` durmiendo al 0 % CPU.
 - [x] **2.8** Ejecución completa con 3 hilos. **CERRADO (2026-10-21):** `exit=0`
   con `./codexion 3 3000 50 20 20 1 1 fifo` y con cooldown 300.
-- [ ] **2.9** pendiente: el flag `simulation_status` en el bucle de `coder_routine`.
+- [x] **2.9** Flag `simulation_status` en el bucle de `coder_routine`. **CERRADO
+  (2026-10-21):** `SIM_RUNNING`/`SIM_STOPPED` en `codexion.h`, comprobación en la
+  condición del `while`. Gancho listo para el monitor (Hito 6); la mitad que cubre
+  al hilo dormido es el **6.5**.
 - [ ] `printf` a un pipe se bufferiza por bloques (en terminal va por líneas). Para testear redirigido: `stdbuf -oL`. Pendiente decidir si afecta a la precisión del log de burnout (Hito 6/7).
-- [ ] Andamiaje adelantado y aún sin cablear: `cooldown_available_time_dongle`
-  (`dongles.c`) y `DONGLE_COOLDOWN` siguen sin usarse (`DONGLE_COOLDOWN` nunca se
-  asigna). `ms_to_timespec` y `cooldowns_deadline` **ya están cableados**. Conviene
-  decidir si se usa o se retira lo que queda al cerrar el 2.9.
+- [x] **[2026-10-21] `DONGLE_COOLDOWN` retirado.** Nunca se asignaba (el enfriamiento lo expresa
+  `available_at`, no un estado) y no tenía ningún uso. Fuera el `#define` y el
+  comentario obsoleto `2 for cooldown` de `state_dongle` en `codexion.h`.
+  `cooldown_available_time_dongle` ya no existía en los fuentes. Verificado:
+  `make re`, norminette 9/9 y `exit=0` sin regresión.
 - [x] ~~`pthread_cond_broadcast` ausente en la devolución.~~ Cerrado.
 - [x] ~~Código muerto: `block_dongles` en `int` + `if` siempre cierto.~~ Cerrado, ahora `void`.
 - [x] ~~Faltaban los dos `LOG_TAKEN`.~~ Cerrados, en orden correcto.
@@ -138,7 +142,7 @@
 - [x] **1.2** Corregir tipos: `t_coder.last_compilation` → `long long`; revisar que todo campo de tiempo sea `long long`.
 - [x] **1.3** Añadir a `t_control` los campos de sincronización (ya aplicado): `pthread_mutex_t mtx_dongles` (protege estado de dongles + topología + `simulation_status`), `pthread_mutex_t mtx_log` (protege la salida), `pthread_cond_t cond_dongles` (despierta a quien espera recursos).
 - [x] **1.4** Implementar `init_sync(t_control *)` y `destroy_sync(t_control *, int created)` con **cleanup en orden inverso** y solo de lo inicializado (si falla el 2º mutex, destruir el 1º). **HECHO** en `sync.c`: devuelve 1/2/3 indicando qué primitiva falló y destruye ella misma lo creado antes de salir. El patrón del contador `created` es el que se reutilizará en el `pthread_create` parcial.
-- [ ] **1.5** Logging con formato exacto del subject: `log_line` existe en `resources.c` con lock `mtx_log`, **pero el formato es `"%dms | coder %d | %s"` y es INCORRECTO**. Debe ser `timestamp_in_ms X <estado>` con los cinco estados exactos (`has taken a dongle`, `is compiling`, `is debugging`, `is refactoring`, `burned out`). **Se movió al Hito 2 como micro-objetivo 2.0**: hasta ahora no había estados reales que reportar.
+- [x] **1.5** Logging con formato exacto del subject. **CERRADO**, movido al Hito 2 como **2.0** (hasta entonces no había estados reales que reportar). Se deja aquí como referencia de que no queda pendiente.
 - [x] **1.6** `main.c`: `init_sync` → smoke test → `destroy_sync` → `free_control`. El smoke test de log se añadió y se retiró; el de disponibilidad también se retiró. **Cerrado.**
 - [x] **1.7** Makefile: `resources.c` y `sync.c` en `SRC`, `codexion.h` como prerequisito de los `.o` y `.PHONY: all` añadido. **Cerrado.**
 - [x] **1.8** `dongles_available` corregido: el predicado era `state == FREE && available_at` (todo timestamp no nulo contaba como disponible). Ahora es `dongle_ready()` = estado `FREE` **y** `current_time() >= available_at`. Más el guard `left_id == right_id`. **Cerrado.**
@@ -184,14 +188,15 @@ Compila limpio, norminette 9/9, ejecuta sin salida ni errores con `n == 1` y `n 
 
 - [x] **2.0** Formato de log exacto: `log_line` (`resources.c`) imprime `"%d %d %s\n"` con el tiempo relativo a `start_time` y el mensaje aportado por quien llama. Los cinco estados viven como `#define` en `codexion.h` (`LOG_TAKEN`, `LOG_COMPILING`, `LOG_DEBUGGING`, `LOG_REFACTORING`, `LOG_BURNEDOUT`), de modo que el texto exacto se define en un solo lugar y el salto de línea vive solo en el formateador. El lock `mtx_log` protege el `printf` completo. **Cerrado.**
 - [x] **2.1** `pthread_t coder_pthread` en `t_coder`. **Hecho** (campo presente); su uso real llega con `pthread_create` en 2.6.
-- [x] **2.2** `coder_routine(void *arg)` en `compiling.c`, reescribiendo los stubs: recibe `t_coder *`, firma `void *` con `return (NULL)`, y el `while` lee `number_of_compiles_done` en vivo. **Hecho.** La comprobación de `simulation_status` queda pendiente con **2.9**.
+- [x] **2.2** `coder_routine(void *arg)` en `compiling.c`, reescribiendo los stubs: recibe `t_coder *`, firma `void *` con `return (NULL)`, y el `while` lee `number_of_compiles_done` en vivo. **Hecho**, y ampliado con la comprobación de `simulation_status` en **2.9**.
 - [x] **2.3** Fase de compile en `compiling_phase`: log `is compiling` (los logs `has taken a dongle` llegarán en el Hito 3) → `usleep(time_to_compile * 1000)` → incrementar `number_of_compiles_done`, actualizar `last_compilation` al inicio. **Hecho**, con la adquisición delegada en `block_dongles`.
 - [x] **2.4** Fase de debug: log `is debugging` → `usleep(time_to_debug * 1000)`. **Hecho.**
 - [x] **2.5** Fase de refactor: log `is refactoring` → `usleep(time_to_refactor * 1000)` → vuelta inmediata al bucle. **Hecho.**
 - [x] **2.6** `run_simulation(t_control *)`: crea los N hilos con `&control->coders[i]`, para en el primer fallo de `pthread_create` y usa `i` como contador de creados. **Hecho** en `coders.c` (21 líneas).
 - [x] **2.7** `main.c`: `run_simulation` tras `init_sync`; `pthread_join` de los creados (dentro de `run_simulation`) antes de `destroy_sync`/`free_control`. **Hecho.**
 - [x] **2.8** Smoke test: `./codexion 3 3000 50 20 20 1 1 fifo` imprime el ciclo con timestamps crecientes. **CERRADO (2026-10-21):** `exit=0`, 3/3 compiles; y con cooldown 300, `exit=0` con 9/9 compiles.
-- [ ] **2.9** Añadir flag `stop`/`simulation_status = SIM_STOPPED` accesible de forma thread-safe para cortar bucles (aunque el monitor real llegue en el Hito 6).
+- [x] **2.9** Flag `simulation_status` accesible de forma thread-safe para cortar bucles. **CERRADO (2026-10-21).** Hecho: `# define SIM_RUNNING 1` / `SIM_STOPPED 0` en `codexion.h` (antes era un literal `1` suelto en `init.c`); `init.c` usa `SIM_RUNNING`; `coder_routine` comprueba el flag **en la condición del `while`**, junto al contador de compiles. Hoy la comprobación es inerte (nadie escribe el flag hasta el Hito 6), pero deja el gancho listo: el monitor solo tendrá que fijar `SIM_STOPPED` + `broadcast`. **Ojo: 2.9 no basta solo** — el hilo dormido está dentro del `while` de `block_dongles`, y ese lo cubre el **6.5**. Ver "Hallazgos del 2.9".
+- [ ] **2.9b (deuda abierta)** El problema real de "cortar bucles": hay que comprobar `simulation_status` también **dentro del `while` de `block_dongles`**, tras despertar. Es el micro-objetivo **6.5**; queda anotado aquí para no dar el 2.9 por completo.
 
 ### Hallazgos del Hito 2
 
@@ -285,8 +290,8 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
   Verificado: cooldown 300 → `exit=0`, 9/9 compiles; `n == 1` → 0 % CPU, estado `Sl`.
 - [ ] **3.5** Caso `number_of_coders == 1`: un solo dongle, el coder nunca puede adquirir el par → debe caer en burnout vía monitor (Hito 6); aquí basta con que **no** se cuelgue: la condvar + monitor lo resolverá. No usar el mismo dongle dos veces, no bloquear el mismo mutex dos veces.
 - [x] **3.6** `dongles_available` con la lógica correcta (estado + `available_at <= now`). **Hecho ya en 1.8** (`dongle_ready` + guard `left_id == right_id`); se cierra aquí para no arrastrar un falso pendiente.
-- [ ] **3.7** Test manual: `./codexion 4 800 200 150 100 3 50 fifo` — verificar que cada `is compiling` está precedido de exactamente dos `has taken a dongle` y que nunca hay dos `is compiling` simultáneos para el mismo dongle (revisar logs).
-- [ ] **3.8** Test de estrés de deadlock: `./codexion 5 200 50 10 10 5 30 fifo` en bucle 20 veces; el programa nunca debe colgarse indefinidamente (si alguien se agota, es comportamiento esperado y deberá imprimirse — llega completo en Hito 6; de momento basta con que no haya hang).
+- [x] **3.7** Test manual: `./codexion 4 800 200 150 100 3 50 fifo`. **CERRADO (2026-10-21):** cada `is compiling` va precedido de exactamente dos `has taken a dongle` del mismo coder, y nunca hay dos compilaciones solapando. Verificado con `awk` sobre la salida real: 12/12 compiles, 24/24 taken, **0 violaciones**. Nota: el log **no dice qué dongle**, así que la única verificación posible por log es la de "dos taken por compiling"; el solape de recursos se deduce de la topología (anillo) y de que como máximo `floor(n/2)` coders compilan a la vez.
+- [x] **3.8** Test de estrés de deadlock: `./codexion 5 200 50 10 10 5 30 fifo` x20. **CERRADO (2026-10-21):** 20/20 terminan (`exit=0`), 0 hangs. Un análisis fino de la salida real (125 líneas = 25 fases) da **0 violaciones**: 2 taken por compiling, ningún coder con dos compiles sin refactor entre medias, y máximo **2 coders compilando a la vez** (`floor(5/2)`, correcto para 5 dongles).
 
 ### Hallazgos del 3.4 — elegir cómo dormir
 
@@ -447,39 +452,36 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
 
 ---
 
-## Próximo paso: **2.9 — `simulation_status` thread-safe**
+## Próximo paso: **Hito 6 — monitor y terminación**
 
-Hito 1 cerrado. Hito 2 cerrado. Hito 3: 3.1–3.4 y 3.6 cerrados. Quedan **3.5**
-(y los tests 3.7/3.8), 2.9, y los Hitos 4–8.
+Hito 1 cerrado. Hito 2 **cerrado** (2.0–2.9). Hito 3: 3.1–3.4 y 3.6 cerrados;
+quedan 3.5 y los tests 3.7/3.8 (los dos ya pasan, falta marcarlos). Luego los
+Hitos 4–8.
 
-**Estado de `simulation_status` hoy:** se inicializa a `1` en `init.c` y
-**nadie lo lee**. Es el único campo que queda sin consumir, y es el que permite
-parar sin cuelgar.
+**Por qué el Hito 6 antes que FIFO/EDF:** hoy el único cuelgue que queda es el
+burnout (el caso `n == 1` y cualquier coder que se atasque). El monitor lo
+convierte en una **salida limpia con log**, y de paso:
+- cierra **3.5** y **6.9** (el caso de 1 coder),
+- completa el **2.9** con el **6.5** (el flag en el `while` de `block_dongles`),
+- hace testeables FIFO/EDF: hoy, si un scheduler falla, no distingues scheduler de cuelgue.
 
-Orden recomendado:
+Factor común de todo el hito: **despertar a quien espera**. El monitor escribe el
+estado y hace `broadcast`; las esperas comprueban el flag al despertar.
 
-1. **2.9** Comprobar `simulation_status` en `coder_routine` al inicio de cada
-   vuelta y salir del bucle si no está en `SIM_RUNNING`. Pregunta de razonamiento
-   antes de tocar nada: **¿hace falta un mutex para leerlo, o basta con un
-   `int`?** Piensa en quién lo escribe (el monitor, Hito 6), en cuándo lo escribe
-   respecto a las escrituras, y en qué ves en un `int` de 4 bytes. Prepara tu
-   respuesta: es una pregunta clásica de defensa.
-2. **3.5** El caso `n == 1` deja de colgar para siempre: el monitor detecta
-   burnout, loguea y fija el flag. Hoy cuelga **con 0 % CPU** (durmiendo bien),
-   que es el estado correcto hasta tener monitor.
-3. **Hito 6** Monitor + terminación: sin él, `./codexion 1 ...` y cualquier
-   burnout cuelgan.
-4. **Hitos 4–5** Colas heap FIFO/EDF. **Hito 7** Estrés/valgrind/TSan.
+Preguntas de razonamiento antes de escribir (son el corazón del hito):
+1. ¿Con qué **llave** escribe el monitor `simulation_status` para que las lecturas de las esperas (que ocurren tras despertar, con la llave re-tomada) lo vean? ¿Por qué la misma `mtx_dongles` y no una nueva?
+2. ¿Qué significa "el burnout corre desde el inicio de la simulación en la primera compilación"? ¿Qué campo y qué momento hacen de origen del cronómetro?
+3. El monitor muestrea cada ≤5 ms. ¿Cómo calculas **cuándo** dormir para cumplir precisión sin girar (6.8 exige <10 ms de error)?
+4. Cuando el monitor detecta burnout y hace `broadcast`, ¿basta con fijar el flag para que nadie vuelva a dormirse? Enlaza con el **6.5**.
 
 Advertencias de prueba:
 - **Cómo distinguir "duerme bien" de "gira":** `ps -o %cpu,stat,wchan -C codexion`.
   `Sl` + `futex_wait` + 0 % = durmiendo (correcto). `R` + `wchan=0` + ~100 % =
-  gira: fecha pasada en el `timedwait`, o un bucle sin incremento (el bug que
-  hubo en `run_simulation`). **Este test separa los tres fallos de una mirada.**
-- `./codexion 1 ...` sigue colgando hasta el Hito 6: es el burnout esperando al
-  monitor. **No es un bug nuevo**; debe seguir durmiendo al 0 %.
-- El parser rechaza `0` en **todos** los argumentos, incluido `dongle_cooldown`: no se puede testear con cooldown 0. Para observar el cooldown usar uno **alto** (300).
-- Para ver la salida redirigida: `stdbuf -oL ./codexion ...` (si no, el buffer se pierde al matar el proceso).
+  gira: fecha pasada en el `timedwait`, o un bucle sin incremento.
+- `./codexion 1 ...` hoy cuelga **durmiendo**; tras el Hito 6 debe salir con un
+  `burned out` y `exit=0`.
+- El parser rechaza `0` en **todos** los argumentos, incluido `dongle_cooldown`.
+- Para ver la salida redirigida: `stdbuf -oL ./codexion ...`.
 
 ---
 

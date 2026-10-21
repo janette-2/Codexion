@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/20 23:54:27 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 15:24:47 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -80,7 +80,8 @@ void	*coder_routine(void *arg)
 
 	coder = (t_coder *)arg;
 	compiles_required = coder->control->number_of_compiles_required;
-	while (coder->number_of_compiles_done < compiles_required)
+	while (coder->number_of_compiles_done < compiles_required
+		&& coder->control->simulation_status != SIM_STOPPED)
 	{
 		compiling_phase(coder);
 		debugging_phase(coder);
