@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 18:45:11 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/21 19:05:28 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,9 +31,9 @@
 
 # define DEADLINE_NEVER  -1
 
-# define SIM_RUNNING 0
-# define SIM_STOPPED 1
-# define SIM_FINISHED 2
+# define SIM_RUNNING 1
+# define SIM_STOPPED 2
+# define SIM_FINISHED 3
 
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;

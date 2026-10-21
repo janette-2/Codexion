@@ -577,9 +577,9 @@ The main thread:
 ```text
 1. Initialise the simulation.                        (done)
 2. Create one thread per coder.                      (done)
-3. Start the monitor.                                (pending: Hito 6)
+3. Start the monitor.                                (done: monitor_routine)
 4. Wait for all coder threads with pthread_join.      (done)
-5. Wait for the monitor if necessary.                 (pending)
+5. Wait for the monitor.                              (done)
 6. Destroy mutexes and condition variables.           (done)
 7. Free allocated memory.                             (done)
 ```
@@ -600,7 +600,7 @@ The intended lifecycle is:
 ```text
 1. Initialise synchronization objects.
 2. Create each coder thread and store its pthread_t.
-3. Create the monitor when that phase is implemented.
+3. Create the monitor thread and store its pthread_t.
 4. Join every thread that was successfully created.
 5. Destroy synchronization objects only after all joins return.
 6. Free the shared arrays.
@@ -655,12 +655,14 @@ The queue and its ordering must be protected from concurrent access.
 The subject requires a separate monitor thread that detects burnout with
 precision and stops the simulation.
 
-It will verify whether:
+It verifies whether:
 
 - A coder has exceeded its burnout limit.
-- The simulation has finished.
-- Every coder has completed the required number of compilations.
-- A fatal error has occurred.
+- Every coder has completed the required number of compilations (success).
+
+The monitor loop already implements success detection: when every coder has
+reached `number_of_compiles_required`, it sets `SIM_FINISHED` and returns.
+Burnout detection (`SIM_STOPPED`) is the next step.
 
 The burnout message must be printed within 10 ms of the real burnout moment,
 which bounds how often the monitor may poll.
@@ -892,14 +894,15 @@ Important constraints include:
 - `pthread_create` result checked on return value (`!= 0`), stopping at the first failure.
 - Thread joining (`run_simulation` joins every thread that was created).
 - Joining before destroying synchronisation objects and freeing memory.
+- Monitor thread creation and joining, with success detection
+  (`SIM_FINISHED`) when every coder completes its required compilations.
 
 ### Still to implement
 
-- Burnout detection by the monitor thread.
-- Simulation status flag checked by waiting and looping threads.
+- Burnout detection by the monitor thread (`SIM_STOPPED`).
+- Simulation status flag checked by the waiting loop in `block_dongles`.
 - FIFO queue.
 - EDF queue.
-- Complete termination protocol.
 - Full error cleanup for thread creation.
 
 ### Open items
@@ -910,9 +913,10 @@ Important constraints include:
 - A coder with `number_of_coders = 1` waits forever for its second dongle by
   design; only the monitor (Hito 6) can end that situation. It sleeps correctly
   (0 % CPU) rather than spinning.
-- `simulation_status` is set to `SIM_RUNNING` in `init.c` and checked by
-  `coder_routine`, but nothing writes `SIM_STOPPED` yet: the monitor (Hito 6) is
-  what will set it on burnout or completion.
+- `simulation_status` uses `SIM_RUNNING = 1`, `SIM_STOPPED = 2` and
+  `SIM_FINISHED = 3`. `0` is deliberately not used for a live state, since `0` is
+  what uninitialised memory holds. The monitor already sets `SIM_FINISHED` on
+  success; `SIM_STOPPED` (burnout) is wired next.
 
 ---
 
@@ -931,8 +935,8 @@ The recommended order is:
 6. Add mutex-protected dongle ownership.
 7. Implement atomic acquisition of both dongles.
 8. Add cooldown handling.
-9. Add the monitor.
-10. Add successful and burnout termination.
+9. Add the monitor.                                   (done)
+10. Add successful and burnout termination.           (success done; burnout next)
 11. Add FIFO scheduling.
 12. Add EDF scheduling.
 13. Add complete error handling.

@@ -40,7 +40,8 @@ while (compiles_done < required)
 | `dongles[i].state_dongle` + `available_at` | `mtx_dongles` | se leen y escriben **juntos**, nunca separados |
 | `printf` (stdout) | `mtx_log` | `log_line` ya lo bloquea por dentro |
 | espera / despertar | `cond_dongles` | no es lock: es la sala de espera |
-| (futuro) colas FIFO/EDF, `simulation_status` | por decidir | Hito 4–6 |
+| `simulation_status` | `mtx_dongles` | el monitor lo escribe bajo la misma llave; los coders lo leen al despertar |
+| (futuro) colas FIFO/EDF | por decidir | Hito 4–5 |
 
 ---
 
