@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/16 13:54:41 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 18:45:40 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/22 20:53:33 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,6 +26,15 @@ void	ms_to_timespec(long long ms, struct timespec *when)
 	when->tv_nsec = (ms % 1000) * 1000000;
 }
 
+void	stop_simulation(t_control *control, int coder_id)
+{
+	pthread_mutex_lock(&(control->mtx_dongles));
+	log_line(control, LOG_BURNEDOUT, coder_id);
+	control->simulation_status = SIM_STOPPED;
+	pthread_cond_broadcast(&(control->cond_dongles));
+	pthread_mutex_unlock(&(control->mtx_dongles));
+}
+
 void	*monitor_routine(void *arg)
 {
 	t_control	*control;
@@ -39,6 +48,12 @@ void	*monitor_routine(void *arg)
 		finish_coders = 0;
 		while (i < control->number_of_coders)
 		{
+			if (current_time() - (control->coders[i].last_compilation)
+				> control->time_to_burnout)
+			{
+				stop_simulation(control, control->coders[i].id);
+				break ;
+			}
 			if (control->coders[i++].number_of_compiles_done
 				== control->number_of_compiles_required)
 				finish_coders++;

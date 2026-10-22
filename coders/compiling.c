@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 18:51:50 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/22 21:25:26 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,7 +19,8 @@ void	block_dongles(t_coder *coder)
 
 	pthread_mutex_lock(&coder->control->mtx_dongles);
 	while (dongles_available(
-			coder->control, coder->left_dongle, coder->right_dongle) == 0)
+			coder->control, coder->left_dongle, coder->right_dongle) == 0
+		&& coder->control->simulation_status == SIM_RUNNING)
 	{
 		deadline_cool = cooldowns_deadline(coder->control,
 				coder->left_dongle, coder->right_dongle);
@@ -35,13 +36,16 @@ void	block_dongles(t_coder *coder)
 				&coder->control->mtx_dongles, &when);
 		}
 	}
-	put_dongles_blocked(coder);
+	if (coder->control->simulation_status == SIM_RUNNING)
+		put_dongles_blocked(coder);
 	pthread_mutex_unlock(&coder->control->mtx_dongles);
 }
 
 void	compiling_phase(t_coder *coder)
 {
 	block_dongles(coder);
+	if (coder->control->simulation_status != SIM_RUNNING)
+		return ;
 	log_line(coder->control, LOG_TAKEN, coder->id);
 	log_line(coder->control, LOG_TAKEN, coder->id);
 	log_line(coder->control, LOG_COMPILING, coder->id);
@@ -84,8 +88,11 @@ void	*coder_routine(void *arg)
 		&& coder->control->simulation_status == SIM_RUNNING)
 	{
 		compiling_phase(coder);
-		debugging_phase(coder);
-		refactoring_phase(coder);
+		if (coder->control->simulation_status == SIM_RUNNING)
+		{
+			debugging_phase(coder);
+			refactoring_phase(coder);
+		}
 	}
 	return (NULL);
 }

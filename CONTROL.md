@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 2 cerrado; **3.4 y 2.8 cerrados: la simulación termina sola**)
+## Estado actual (Hito 6 en curso; **salida por éxito y por burnout funcionan**)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -393,9 +393,9 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
 
 - [x] **6.1** Hilo monitor (`pthread_create` en `run_simulation`): bucle mientras `SIM_RUNNING`. **HECHO.** `pthread_t monitor_pthread` en `t_control`; `monitor_routine` en `simulation.c`; `run_simulation` crea el monitor tras los coders y lo une al final.
 - [x] **6.4** Detección de éxito: todos los coders con `number_of_compiles_done == required` → `SIM_FINISHED`, el monitor sale. **HECHO.** Contador `finish_coders` **reiniciado en cada vuelta** del bucle exterior (bug: si no, se inflaba y paraba a un coder a medias); comparación `== required`. Verificado 8/8 runs con `2/2/2` compiles y `exit=0`.
-- [ ] **6.2** Detección de burnout: para cada coder, `current_time() - last_compilation > time_to_burnout` (el reloj corre desde el inicio de la simulación en la primera compilación). **Origen del cronómetro:** `last_compilation` se inicializa a `control->start_time` en `coder_args` (por eso `start_time` se movió en `main.c` a **después** de `check_args` y **antes** de `init_coders`). Precisión: muestrear cada ≤5 ms o calcular el próximo deadline y dormir solo ese delta.
-- [ ] **6.3** Al detectar burnout: log `burned out` (formato exacto, bajo `mtx_log`), fijar `SIM_STOPPED`, monitor sale. **Decisión:** basta el **primer** burnout detectado: se loguea, se fija `SIM_STOPPED` y se sale (no se siguen registrando más coders quemados en la misma vuelta).
-- [ ] **6.5** Todas las esperas (dongles, cooldown, relevo) deben comprobar `simulation_status` tras despertar y salir del bucle si no están en `SIM_RUNNING` (evitar hang tras burnout). **Pendiente clave:** el `while` de `block_dongles` aún no comprueba el flag; sin esto, un coder dormido no reacciona a `SIM_STOPPED`.
+- [x] **6.2** Detección de burnout: para cada coder, `current_time() - last_compilation > time_to_burnout`. **HECHO.** Origen del cronómetro: `last_compilation` se inicializa a `control->start_time` en `coder_args` (de ahí mover `start_time` en `main.c` a **después** de `check_args` y **antes** de `init_coders`). El monitor recorre los coders y para con el **primer** quemado. **Pendiente:** el monitor no hace `usleep` → gira al 100% mientras `RUNNING`; falta el muestreo ≤5 ms (6.8).
+- [x] **6.3** Al detectar burnout: log `burned out` (bajo `mtx_log` vía `log_line`), fijar `SIM_STOPPED`, `broadcast` a `cond_dongles`. **HECHO** con helper `stop_simulation(control, coder_id)` en `simulation.c`: coge `mtx_dongles`, loguea, fija `SIM_STOPPED`, broadcast, suelta. El monitor sale con `break` tras el primer burnout (decisión: una sola parada).
+- [x] **6.5** Todas las esperas comprueban `simulation_status`. **HECHO.** `block_dongles`: el `while` espera solo mientras `dongles no disponibles && status == SIM_RUNNING`; el `put_dongles_blocked` va bajo `if (status == SIM_RUNNING)` (si salió por parada, no marca dongles). `compiling_phase`: tras `block_dongles`, `if (status != SIM_RUNNING) return;` (no loguea ni compila si se abortó). `coder_routine`: tras `compiling_phase`, solo entra a debug/refactor `if (status == SIM_RUNNING)` (evita las fases "fantasma" tras un abort).
 - [ ] **6.6** El caso `1 coder` ahora termina: cuelga en la espera → monitor detecta burnout → log → parada. Verificar.
 - [ ] **6.7** `pthread_join` del monitor + de todos los coders + `destroy_sync` + `free_control`.
 - [ ] **6.8** Test de precisión: script/manual que ejecute `./codexion 3 300 100 100 100 5 100 fifo` (no viable) y compruebe que `burned out` aparece en <10 ms tras la teórica expiración (timestamp del log vs cálculo).
