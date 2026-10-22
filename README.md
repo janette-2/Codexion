@@ -660,16 +660,26 @@ It verifies whether:
 - A coder has exceeded its burnout limit.
 - Every coder has completed the required number of compilations (success).
 
-The monitor loop already implements success detection: when every coder has
-reached `number_of_compiles_required`, it sets `SIM_FINISHED` and returns.
-Burnout detection (`SIM_STOPPED`) is the next step.
+The monitor loop implements both outcomes:
+
+- On success (every coder reached `number_of_compiles_required`) it sets
+  `SIM_FINISHED` and returns.
+- On burnout (`current_time() - last_compilation > time_to_burnout` for any
+  coder) it logs `X burned out`, sets `SIM_STOPPED` and returns. It stops at the
+  first burnout it finds, logging a single `burned out` line.
+
+The burnout decision, the state change and the wake-up happen together in one
+helper (`stop_simulation`), taking `mtx_dongles`: logging happens under that same
+lock so the message is serialised, and a `pthread_cond_broadcast` wakes every
+coder sleeping on the condition variable.
 
 The burnout message must be printed within 10 ms of the real burnout moment,
-which bounds how often the monitor may poll.
+which bounds how often the monitor may poll. The loop samples on a fixed
+interval for that reason.
 
 The monitor must not inspect mutable coder or dongle state without synchronisation.
 
-When the simulation ends, the monitor will update the shared simulation status and notify waiting threads with `pthread_cond_broadcast`.
+When the simulation ends, the monitor updates the shared simulation status and notifies waiting threads with `pthread_cond_broadcast`.
 
 The monitor is mandatory for every configuration, including the single coder,
 which never starts compiling and can only terminate through burnout.
@@ -899,8 +909,7 @@ Important constraints include:
 
 ### Still to implement
 
-- Burnout detection by the monitor thread (`SIM_STOPPED`).
-- Simulation status flag checked by the waiting loop in `block_dongles`.
+- Monitor sampling sleep (poll interval ≤5 ms) for burnout precision.
 - FIFO queue.
 - EDF queue.
 - Full error cleanup for thread creation.
@@ -910,13 +919,17 @@ Important constraints include:
 - When output is redirected to a pipe, `printf` is block-buffered, so logs may
   not appear until the process exits. Run with an unbuffered stdout
   (`stdbuf -oL`) when capturing output; on a terminal it is line-buffered.
-- A coder with `number_of_coders = 1` waits forever for its second dongle by
-  design; only the monitor (Hito 6) can end that situation. It sleeps correctly
-  (0 % CPU) rather than spinning.
+- A coder with `number_of_coders = 1` never acquires its second dongle (the two
+  dongles would be the same). It sleeps on the condition variable (0 % CPU) and
+  terminates through burnout: the monitor logs `1 burned out` and stops the
+  simulation.
 - `simulation_status` uses `SIM_RUNNING = 1`, `SIM_STOPPED = 2` and
   `SIM_FINISHED = 3`. `0` is deliberately not used for a live state, since `0` is
-  what uninitialised memory holds. The monitor already sets `SIM_FINISHED` on
-  success; `SIM_STOPPED` (burnout) is wired next.
+  what uninitialised memory holds. The monitor sets `SIM_FINISHED` on success and
+  `SIM_STOPPED` on burnout.
+- The monitor loop currently polls without sleeping, so it uses 100 % CPU while
+  the simulation runs. Adding a short sleep (≤5 ms) is pending and is required
+  for the 10 ms burnout precision.
 
 ---
 
@@ -936,7 +949,7 @@ The recommended order is:
 7. Implement atomic acquisition of both dongles.
 8. Add cooldown handling.
 9. Add the monitor.                                   (done)
-10. Add successful and burnout termination.           (success done; burnout next)
+10. Add successful and burnout termination.           (done)
 11. Add FIFO scheduling.
 12. Add EDF scheduling.
 13. Add complete error handling.

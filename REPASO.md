@@ -1,8 +1,10 @@
 # REPASO A4 — Codexion
 
-> Hoja de una cara para imprimir. Estado: **Hito 2 cerrado; 3.4 y 2.8 cerrados** —
-> la simulación termina sola (`exit=0`). Pendiente: 2.9 y el monitor. Detalle en
-> `CONTROL.md`, teoría en `TEORIA.md`, dibujos en `DIAGRAMAS.md`.
+> Hoja de una cara para imprimir. Estado: **Hito 6 casi cerrado** — el monitor
+> detecta éxito (`SIM_FINISHED`) y burnout (`SIM_STOPPED`); la simulación termina
+> sola (`exit=0`), incluido `n == 1`. Pendiente: muestreo del monitor (`usleep`)
+> y tests 6.8/6.9. Detalle en `CONTROL.md`, teoría en `TEORIA.md`, dibujos en
+> `DIAGRAMAS.md`.
 
 ---
 
@@ -111,8 +113,10 @@ Burnout se imprime en < 10 ms del momento real.
 ## `n == 1` — el caso especial
 
 La mesa tiene **1 dongle**, y `dongles_available` rechaza `left_id == right_id`.
-El coder nunca adquiere el par → `cond_wait` para siempre.
-No es un bug: es la ruta de burnout; la cierra el **monitor** (Hito 6).
+El coder nunca adquiere el par → `cond_wait` hasta que el **monitor** detecta el
+burnout (`current_time() - last_compilation > time_to_burnout`), loguea
+`1 burned out`, fija `SIM_STOPPED` y hace `broadcast`. El coder despierta, ve que
+ya no está `RUNNING` y sale. `exit=0`.
 
 ---
 

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/16 13:54:41 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/22 20:53:33 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/22 21:32:48 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -60,6 +60,7 @@ void	*monitor_routine(void *arg)
 			if (finish_coders == control->number_of_coders)
 				control->simulation_status = SIM_FINISHED;
 		}
+		usleep(5000);
 	}
 	return (NULL);
 }
