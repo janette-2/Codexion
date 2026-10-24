@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/16 13:54:41 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/22 21:32:48 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/24 20:32:03 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -35,31 +35,37 @@ void	stop_simulation(t_control *control, int coder_id)
 	pthread_mutex_unlock(&(control->mtx_dongles));
 }
 
+void	check_simulation_state(t_control *control)
+{
+	int			i;
+	int			finish_coders;
+
+	i = 0;
+	finish_coders = 0;
+	while (i < control->number_of_coders)
+	{
+		if (current_time() - (control->coders[i].last_compilation)
+			> control->time_to_burnout)
+		{
+			stop_simulation(control, control->coders[i].id);
+			break ;
+		}
+		if (control->coders[i++].number_of_compiles_done
+			== control->number_of_compiles_required)
+			finish_coders++;
+		if (finish_coders == control->number_of_coders)
+			control->simulation_status = SIM_FINISHED;
+	}
+}
+
 void	*monitor_routine(void *arg)
 {
 	t_control	*control;
-	int			i;
-	int			finish_coders;
 
 	control = (t_control *)arg;
 	while (control->simulation_status == SIM_RUNNING)
 	{
-		i = 0;
-		finish_coders = 0;
-		while (i < control->number_of_coders)
-		{
-			if (current_time() - (control->coders[i].last_compilation)
-				> control->time_to_burnout)
-			{
-				stop_simulation(control, control->coders[i].id);
-				break ;
-			}
-			if (control->coders[i++].number_of_compiles_done
-				== control->number_of_compiles_required)
-				finish_coders++;
-			if (finish_coders == control->number_of_coders)
-				control->simulation_status = SIM_FINISHED;
-		}
+		check_simulation_state(control);
 		usleep(5000);
 	}
 	return (NULL);

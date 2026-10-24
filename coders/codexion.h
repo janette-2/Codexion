@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 19:05:28 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/24 21:06:31 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -35,6 +35,9 @@
 # define SIM_STOPPED 2
 # define SIM_FINISHED 3
 
+# define REQUEST_NOT_WAITING 0
+# define REQUEST_WAITING 1
+
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
 typedef struct s_dongle		t_dongle;
@@ -49,6 +52,8 @@ struct s_coder
 	// Everyone access to the same control variable through a pointer
 	int				left_dongle;
 	int				right_dongle;
+	long long		ticket;
+	int				waiting;
 };
 
 struct s_dongle
@@ -76,6 +81,9 @@ struct s_control
 	pthread_mutex_t	mtx_dongles;
 	pthread_mutex_t	mtx_log;
 	pthread_cond_t	cond_dongles;
+	t_coder			**waiting_queue;
+	int				waiting_count;
+	long long		next_ticket;
 };
 
 /* INIT.C */
@@ -106,6 +114,7 @@ int			dongles_available(t_control *control, int left_id, int right_id);
 int			dongle_ready(t_dongle *dongle);
 void		log_line(t_control *control, const char *message, int id);
 long long	cooldowns_deadline(t_control *control, int left_id, int right_id);
+void		wait_for_dongles(t_coder *coder);
 
 /* COMPILING.C */
 void		block_dongles(t_coder *coder);
@@ -113,5 +122,9 @@ void		compiling_phase(t_coder *coder);
 void		debugging_phase(t_coder *coder);
 void		refactoring_phase(t_coder *coder);
 void		*coder_routine(void *arg);
+
+/* QUEUE.C */
+int			init_waiting_queue(t_control *control);
+void		register_request(t_coder *coder);
 
 #endif

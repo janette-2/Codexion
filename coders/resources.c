@@ -65,3 +65,28 @@ long long	cooldowns_deadline(t_control *control, int left_id, int right_id)
 			return (at_right);
 	}
 }
+
+void	wait_for_dongles(t_coder *coder)
+{
+	long long		deadline_cool;
+	struct timespec	when;
+
+	while (dongles_available(
+			coder->control, coder->left_dongle, coder->right_dongle) == 0
+		&& coder->control->simulation_status == SIM_RUNNING)
+	{
+		deadline_cool = cooldowns_deadline(coder->control,
+				coder->left_dongle, coder->right_dongle);
+		if (deadline_cool == DEADLINE_NEVER)
+		{
+			pthread_cond_wait(
+				&coder->control->cond_dongles, &coder->control->mtx_dongles);
+		}
+		else
+		{
+			ms_to_timespec(deadline_cool, &when);
+			pthread_cond_timedwait(&coder->control->cond_dongles,
+				&coder->control->mtx_dongles, &when);
+		}
+	}
+}

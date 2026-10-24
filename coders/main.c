@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 18:24:03 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/24 20:24:47 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,6 +24,20 @@ void	free_control(t_control *control)
 		free(control->dongles);
 		control->dongles = NULL;
 	}
+	if (control->waiting_queue)
+	{
+		free(control->waiting_queue);
+		control->waiting_queue = NULL;
+	}
+}
+
+void	init_control(t_control *control)
+{
+	control->coders = NULL;
+	control->dongles = NULL;
+	control->waiting_queue = NULL;
+	control->waiting_count = 0;
+	control->next_ticket = 0;
 }
 
 int	main(int argc, char *arg[])
@@ -31,9 +45,10 @@ int	main(int argc, char *arg[])
 	t_control		control;
 	int				created;
 
-	control.coders = NULL;
-	control.dongles = NULL;
+	init_control(&control);
 	if (check_args(argc, arg, &control) == 1)
+		return (1);
+	if (init_waiting_queue(&control) == 1)
 		return (1);
 	control.start_time = current_time();
 	if (init_coders(&control) == -1 || init_dongles(&control) == -1)

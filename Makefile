@@ -9,7 +9,8 @@ SRC = coders/main.c \
 	coders/dongles.c \
 	coders/resources.c \
 	coders/sync.c \
-	coders/simulation.c
+	coders/simulation.c \
+	coders/queue.c
 
 OBJ = $(SRC:.c=.o)
 

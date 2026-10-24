@@ -101,6 +101,16 @@
   `ERROR SUMMARY: 0 errors`.
 
 ### Deuda pendiente
+- [x] Preparacion del scheduler global e inicializacion. Avance 2026-10-24:
+  t_coder tiene ticket y waiting; t_control tiene waiting_queue,
+  waiting_count y next_ticket. Se anaden los estados de solicitud, se
+  inicializa el control, se reserva la cola en queue.c y se libera en
+  free_control. Aun no se registran ni ordenan solicitudes.
+- [x] 4.0b Corregir y verificar el error de init_waiting_queue (-1), y
+  comprobar make y norminette.
+- [x] 4.1a Registrar una sola solicitud por coder en block_dongles, bajo
+  mtx_dongles, asignando next_ticket y conservando el ticket al despertar.
+- [ ] 4.1b Anadir el puntero del coder a waiting_queue e incrementar waiting_count una sola vez. Todavia sin ordenar ni usar heap.
 
 - [x] **3.4 — el cooldown sin timbre.** **CERRADO (2026-10-21).** `block_dongles`
   decide dentro del `while`: `cooldowns_deadline` → `DEADLINE_NEVER` ⇒ `cond_wait`;

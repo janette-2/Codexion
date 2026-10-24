@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/22 21:25:26 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/24 21:05:58 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,28 +14,9 @@
 
 void	block_dongles(t_coder *coder)
 {
-	long long		deadline_cool;
-	struct timespec	when;
-
 	pthread_mutex_lock(&coder->control->mtx_dongles);
-	while (dongles_available(
-			coder->control, coder->left_dongle, coder->right_dongle) == 0
-		&& coder->control->simulation_status == SIM_RUNNING)
-	{
-		deadline_cool = cooldowns_deadline(coder->control,
-				coder->left_dongle, coder->right_dongle);
-		if (deadline_cool == DEADLINE_NEVER)
-		{
-			pthread_cond_wait(
-				&coder->control->cond_dongles, &coder->control->mtx_dongles);
-		}
-		else
-		{
-			ms_to_timespec(deadline_cool, &when);
-			pthread_cond_timedwait(&coder->control->cond_dongles,
-				&coder->control->mtx_dongles, &when);
-		}
-	}
+	register_request(coder);
+	wait_for_dongles(coder);
 	if (coder->control->simulation_status == SIM_RUNNING)
 		put_dongles_blocked(coder);
 	pthread_mutex_unlock(&coder->control->mtx_dongles);

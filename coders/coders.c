@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 16:24:55 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/21 18:25:13 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/24 19:44:30 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,6 +20,8 @@ void	coder_args(t_coder *coder, int i, t_control *control)
 	coder->control = control;
 	coder->left_dongle = 0;
 	coder->right_dongle = 0;
+	coder->ticket = -1;
+	coder->waiting = REQUEST_NOT_WAITING;
 }
 
 int	init_coders(t_control *control)
