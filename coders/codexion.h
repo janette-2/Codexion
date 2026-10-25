@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 19:34:26 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 20:13:22 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -41,6 +41,7 @@
 typedef struct s_control	t_control;
 typedef struct s_coder		t_coder;
 typedef struct s_dongle		t_dongle;
+typedef struct s_queue		t_queue;
 
 struct s_coder
 {
@@ -63,6 +64,14 @@ struct s_dongle
 	long long	available_at; //cooldown instant; dongle is FREE but not ready
 };
 
+struct s_queue
+{
+	t_coder		**items;
+	int			size;
+	int			capacity;
+};
+
+
 struct s_control
 {
 	int				number_of_coders;
@@ -82,6 +91,7 @@ struct s_control
 	pthread_mutex_t	mtx_log;
 	pthread_cond_t	cond_dongles;
 	t_coder			**waiting_queue;
+	t_queue			scheduler_queue;
 	int				waiting_count;
 	long long		next_ticket;
 	t_coder			*next_in_queue;

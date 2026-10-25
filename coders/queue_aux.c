@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/25 15:31:41 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 15:32:39 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 20:19:10 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -19,6 +19,13 @@ int	init_waiting_queue(t_control *control)
 	if (!control->waiting_queue)
 	{
 		control->waiting_queue = NULL;
+		return (1);
+	}
+	control->scheduler_queue.items = malloc(
+			sizeof(t_coder *) * control->number_of_coders);
+	if (!control->scheduler_queue.items)
+	{
+		control->scheduler_queue.items = NULL;
 		return (1);
 	}
 	return (0);
