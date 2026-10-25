@@ -110,15 +110,12 @@
   comprobar make y norminette.
 - [x] 4.1a Registrar una sola solicitud por coder en block_dongles, bajo
   mtx_dongles, asignando next_ticket y conservando el ticket al despertar.
-- [ ] 4.1b Anadir el puntero del coder a waiting_queue e incrementar waiting_count una sola vez. Todavia sin ordenar ni usar heap.
-  - Avance 2026-10-25: anadidos `deadline`, `temp_beats_best` y
-    `choose_next_in_queue` en `queue.c` (eleccion on-demand bajo `mtx_dongles`).
-    **No compila todavia** y hay doble insercion: `register_request` escribe en
-    `waiting_queue[next_ticket - 1]` (indice fuera de rango) y `enqueue_coder`
-    vuelve a insertar. Pendiente: `strcmp` en `temp_beats_best`, typo
-    `i < control->waiting_queue[i] == coder` en `enqueue_coder`, declarar
-    `enqueue_coder` en el header, quitar `assign_next_in_queue` de `compiling.c`
-    y el parametro sin usar de `choose_next_in_queue`.
+- [x] 4.1b Anadir el puntero del coder a waiting_queue e incrementar waiting_count una sola vez. Todavia sin ordenar ni usar heap.
+  - Cerrado 2026-10-25: register_request asigna el ticket una sola vez y
+    enqueue_coder realiza la insercion unica usando waiting_count; se corrigieron
+    la comparacion de punteros y la seleccion fifo/edf con strcmp. Verificado con
+    make fclean && make all, norminette coders/*.c coders/*.h y una prueba de
+    humo de 3 coders sin bloqueo.
 
 - [x] **3.4 — el cooldown sin timbre.** **CERRADO (2026-10-21).** `block_dongles`
   decide dentro del `while`: `cooldowns_deadline` → `DEADLINE_NEVER` ⇒ `cond_wait`;
@@ -148,7 +145,7 @@
 
 ### Falta (núcleo concorrente por delante)
 
-`simulation_status` (2.9) y monitor/terminación (Hito 6) **cerrados**; colas FIFO/EDF (Hito 4–5) **en progreso** (elección on-demand ya escrita, build rojo; falta integración y heap), estrés y errores (Hito 7).
+`simulation_status` (2.9) y monitor/terminacion (Hito 6) **cerrados**; colas FIFO/EDF (Hito 4-5) **en progreso** (eleccion on-demand ya escrita, build verde; falta integracion y heap), estres y errores (Hito 7).
 
 ---
 
