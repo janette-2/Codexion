@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/24 21:05:58 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 12:21:25 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,6 +16,7 @@ void	block_dongles(t_coder *coder)
 {
 	pthread_mutex_lock(&coder->control->mtx_dongles);
 	register_request(coder);
+	enqueue_coder(coder->control, coder);
 	wait_for_dongles(coder);
 	if (coder->control->simulation_status == SIM_RUNNING)
 		put_dongles_blocked(coder);
@@ -42,6 +43,7 @@ void	compiling_phase(t_coder *coder)
 		coder->left_dongle - 1].state_dongle = DONGLE_FREE;
 	coder->control->dongles[coder->left_dongle - 1].available_at = (
 			current_time() + coder->control->dongle_cooldown);
+	assign_next_in_queue();
 	pthread_cond_broadcast(&coder->control->cond_dongles);
 	pthread_mutex_unlock(&coder->control->mtx_dongles);
 }

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/24 20:24:47 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 11:18:18 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,6 +38,7 @@ void	init_control(t_control *control)
 	control->waiting_queue = NULL;
 	control->waiting_count = 0;
 	control->next_ticket = 0;
+	control->next_in_queue = NULL;
 }
 
 int	main(int argc, char *arg[])
