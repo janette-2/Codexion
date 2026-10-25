@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 15:37:37 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 19:34:26 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -133,6 +133,5 @@ long long	deadline(t_coder *coder);
 
 /* QUEUE_AUX.C */
 int			init_waiting_queue(t_control *control);
-
 
 #endif

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/24 19:46:58 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 15:37:07 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 19:35:01 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -15,7 +15,6 @@
 void	register_request(t_coder *coder)
 {
 	t_control	*control;
-	int			last_i;
 
 	control = coder->control;
 	if (coder->waiting == REQUEST_NOT_WAITING)
@@ -24,8 +23,6 @@ void	register_request(t_coder *coder)
 		control->next_ticket++;
 		coder->waiting = REQUEST_WAITING;
 	}
-	last_i = control->next_ticket - 1;
-	control->waiting_queue[last_i] = coder;
 }
 
 void	enqueue_coder(t_control *control, t_coder *coder)
@@ -41,7 +38,7 @@ void	enqueue_coder(t_control *control, t_coder *coder)
 	}
 	while (i < control->waiting_count)
 	{
-		if (i < control->waiting_queue[i] == coder)
+		if (control->waiting_queue[i] == coder)
 			return ;
 		i++;
 	}
@@ -57,9 +54,9 @@ long long	deadline(t_coder *coder)
 
 int	temp_beats_best(t_coder *temp, t_coder *best, t_control *control)
 {
-	if (control->scheduler = "fifo")
+	if (strcmp(control->scheduler, "fifo") == 0)
 		return (temp->ticket < best->ticket);
-	if (control->scheduler = "edf")
+	else
 		return (deadline(temp) < deadline(best));
 }
 
