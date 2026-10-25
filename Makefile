@@ -10,7 +10,8 @@ SRC = coders/main.c \
 	coders/resources.c \
 	coders/sync.c \
 	coders/simulation.c \
-	coders/queue.c
+	coders/queue.c \
+	coders/queue_aux.c
 
 OBJ = $(SRC:.c=.o)
 

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 15:12:53 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 15:37:56 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,7 +43,7 @@ void	compiling_phase(t_coder *coder)
 		coder->left_dongle - 1].state_dongle = DONGLE_FREE;
 	coder->control->dongles[coder->left_dongle - 1].available_at = (
 			current_time() + coder->control->dongle_cooldown);
-	assign_next_in_queue();
+	choose_next_in_queue(coder->control);
 	pthread_cond_broadcast(&coder->control->cond_dongles);
 	pthread_mutex_unlock(&coder->control->mtx_dongles);
 }
