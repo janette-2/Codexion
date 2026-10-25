@@ -116,6 +116,7 @@ coders/
 ├── dongles.c
 ├── resources.c
 ├── compiling.c
+├── queue.c
 ├── simulation.c
 └── sync.c
 ```
@@ -200,6 +201,34 @@ Contains the resource-availability helpers:
 - `cooldowns_deadline`: given a pair, the instant at which it becomes
   available, or `DEADLINE_NEVER` when no such instant exists yet.
 - `log_line`: the serialised log formatter.
+
+### `queue.c`
+
+Holds the scheduler queue and the arbitration helpers:
+
+- `init_waiting_queue`: allocates the `t_coder *` array on the heap
+  (`number_of_coders` slots). Called during control initialisation and freed on
+  every exit path.
+- `register_request`: assigns a monotonic `ticket` and marks the coder as
+  `REQUEST_WAITING`. It runs under `mtx_dongles`, so the ticket order matches the
+  order in which requests reached the critical section.
+- `enqueue_coder`: appends the coder to `waiting_queue` and increments
+  `waiting_count`. Its duplicate check is currently broken, so the intended
+  "append once" behaviour still has to be fixed.
+- `deadline`: returns the absolute burnout instant,
+  `last_compilation + time_to_burnout`. It does **not** read the current clock;
+  it is a date, not a remaining time.
+- `temp_beats_best`: the comparator. In `fifo` the smaller ticket wins; in `edf`
+  the smaller deadline wins. Equal deadlines have no tie-break yet; adding the
+  ticket as a tie-break is recommended for determinism.
+- `choose_next_in_queue`: the election. It scans the waiting coders, keeps only
+  those whose two dongles are available (`dongles_available`), and returns the
+  best one according to `temp_beats_best`. It is called with `mtx_dongles`
+  held.
+
+The design does not keep a mutable `next_in_queue` cursor. The winner is
+recomputed on demand from the queue and the current dongle state, which avoids a
+stale cursor after a release, a cooldown expiry or a coder leaving the queue.
 
 ### `sync.c`
 
@@ -615,38 +644,68 @@ was never created must not be joined.
 
 ## FIFO Scheduler
 
-FIFO means First In, First Out.
+FIFO means First In, First Out: the request that arrived first is considered
+before later requests.
 
-The first coder that enters the waiting queue should be considered before coders that arrive later.
+### Election model
 
-A FIFO queue will eventually be stored on the heap, as required by the subject.
+There is no mutable `next_in_queue` cursor. Whenever a coder has to decide
+whether it may take the dongles, the election is recomputed from the queue and
+the current dongle state:
 
-The queue must:
+1. The coder registers once (`register_request`) and is appended once
+   (`enqueue_coder`), both under `mtx_dongles`.
+2. It waits on `cond_dongles`. A release marks both dongles free and broadcasts;
+   it does not hand-pick the next coder.
+3. On wake-up, every waiter asks `choose_next_in_queue` who wins. Only that
+   coder marks the pair as blocked and leaves the queue.
 
-- Store waiting coder references or identifiers.
-- Preserve insertion order.
-- Remove coders in the same order in which they entered.
-- Be protected by the appropriate synchronisation mechanism.
+`choose_next_in_queue` ignores coders whose pair is not available, so a coder
+blocked on a busy dongle cannot stall a coder whose pair is free. For FIFO the
+comparator is the `ticket` assigned in `register_request`: the smallest ticket
+wins.
+
+Recomputing on demand avoids a stale cursor after a release, a cooldown expiry
+or a coder leaving the queue (burnout or termination).
+
+### Heap requirement
+
+The subject requires a priority queue (heap) for scheduling. The current code
+uses a heap-allocated array plus a linear scan; replacing the scan with a heap
+is still pending. The array itself is already dynamic, as required.
+
+### Pending integration
+
+The acquire path still has to enforce the election inside its wait condition:
+`wait_for_dongles` must not return unless `choose_next_in_queue` returns the
+current coder. Until then, the first woken thread can take the pair and the
+scheduler is not fair.
 
 ---
 
 ## EDF Scheduler
 
-EDF means Earliest Deadline First.
+EDF means Earliest Deadline First: the coder with the closest burnout deadline
+wins.
 
-The coder with the closest burnout deadline should receive priority.
-
-The deadline is conceptually calculated as:
+The absolute deadline is:
 
 ```text
-last_compilation_time + time_to_burnout
+deadline = last_compilation + time_to_burnout
 ```
 
-The EDF structure will also be dynamically allocated on the heap.
+`deadline` (`queue.c`) computes exactly that expression without reading the
+current clock. `last_compilation` is initialised to `start_time` and updated at
+the start of each real compilation, so every waiting coder has a comparable
+deadline.
 
-When selecting the next coder, the scheduler must compare the waiting coders' deadlines and choose the earliest one.
+`temp_beats_best` compares deadlines (`<`). Two coders can share a deadline;
+there is no tie-break yet, so adding the ticket as a secondary key is
+recommended to keep the result deterministic.
 
-The queue and its ordering must be protected from concurrent access.
+The same election model as FIFO applies: a coder is only grantable if its two
+dongles are available, and the winner is recomputed on demand under
+`mtx_dongles`.
 
 ---
 
@@ -907,11 +966,35 @@ Important constraints include:
 - Monitor thread creation and joining, with success detection
   (`SIM_FINISHED`) when every coder completes its required compilations.
 
+### In progress — scheduler (2026-10-25)
+
+- Queue storage allocated on the heap (`init_waiting_queue`).
+- Monotonic ticket assignment via `register_request`.
+- `enqueue_coder` is intended to append a coder once and update
+  `waiting_count`; its duplicate check is still broken.
+- `deadline` returns `last_compilation + time_to_burnout`.
+- `temp_beats_best` implements the FIFO (ticket) and EDF (deadline) keys.
+- `choose_next_in_queue` elects the best coder whose pair is available.
+
+The scheduler is not integrated yet and the build is currently red. Pending:
+
+- Declare `enqueue_coder` in `codexion.h`.
+- Remove the call to the non-existent `assign_next_in_queue` in `compiling.c`.
+- Fix `enqueue_coder`: the membership test compares an `int` with a pointer.
+- Use `strcmp` instead of `==` for the scheduler name in `temp_beats_best`, and
+  give it a return path on every branch.
+- Remove the unused `coder` parameter from `choose_next_in_queue`.
+- Index `waiting_queue` with `waiting_count`, not `next_ticket - 1`.
+- Register each request once (`register_request` plus `enqueue_coder` currently
+  insert twice).
+- Enforce the election in the acquire wait condition (see FIFO section).
+- Replace the linear scan with a real priority queue (heap).
+
 ### Still to implement
 
 - Monitor sampling sleep (poll interval ≤5 ms) for burnout precision.
-- FIFO queue.
-- EDF queue.
+- FIFO queue integration and heap.
+- EDF queue integration and tie-break verification.
 - Full error cleanup for thread creation.
 
 ### Open items

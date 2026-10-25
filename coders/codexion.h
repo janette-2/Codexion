@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 12:21:16 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/25 15:12:34 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -128,6 +128,8 @@ void		*coder_routine(void *arg);
 int			init_waiting_queue(t_control *control);
 void		register_request(t_coder *coder);
 void		enqueue_coder(t_control *control, t_coder *coder);
-
+int			temp_beats_best(t_coder *temp, t_coder *best, t_control *control);
+t_coder		*choose_next_in_queue(t_control *control, t_coder *coder);
+long long	deadline(t_coder *coder);
 
 #endif

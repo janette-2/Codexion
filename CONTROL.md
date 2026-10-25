@@ -111,6 +111,14 @@
 - [x] 4.1a Registrar una sola solicitud por coder en block_dongles, bajo
   mtx_dongles, asignando next_ticket y conservando el ticket al despertar.
 - [ ] 4.1b Anadir el puntero del coder a waiting_queue e incrementar waiting_count una sola vez. Todavia sin ordenar ni usar heap.
+  - Avance 2026-10-25: anadidos `deadline`, `temp_beats_best` y
+    `choose_next_in_queue` en `queue.c` (eleccion on-demand bajo `mtx_dongles`).
+    **No compila todavia** y hay doble insercion: `register_request` escribe en
+    `waiting_queue[next_ticket - 1]` (indice fuera de rango) y `enqueue_coder`
+    vuelve a insertar. Pendiente: `strcmp` en `temp_beats_best`, typo
+    `i < control->waiting_queue[i] == coder` en `enqueue_coder`, declarar
+    `enqueue_coder` en el header, quitar `assign_next_in_queue` de `compiling.c`
+    y el parametro sin usar de `choose_next_in_queue`.
 
 - [x] **3.4 — el cooldown sin timbre.** **CERRADO (2026-10-21).** `block_dongles`
   decide dentro del `while`: `cooldowns_deadline` → `DEADLINE_NEVER` ⇒ `cond_wait`;
@@ -140,7 +148,7 @@
 
 ### Falta (núcleo concorrente por delante)
 
-`simulation_status` (2.9) y monitor/terminación (Hito 6) **cerrados**; colas heap FIFO/EDF (Hito 4–5), estrés y errores (Hito 7).
+`simulation_status` (2.9) y monitor/terminación (Hito 6) **cerrados**; colas FIFO/EDF (Hito 4–5) **en progreso** (elección on-demand ya escrita, build rojo; falta integración y heap), estrés y errores (Hito 7).
 
 ---
 
@@ -375,6 +383,27 @@ Ciclo con dongles reales completo: espera → coge los dos → log ×3 → compi
 ## HITO 4 — Planificador FIFO con heap
 
 **Objetivo:** cuando varios coders quieren el mismo dongle, el arbitraje respeta orden de llegada. Cola de prioridad **en el heap** (malloc), como exige el subject.
+
+### Decision de diseno (2026-10-25): eleccion on-demand, sin cursor
+
+La cola **no** guarda "a quien le toca" en una variable `next_in_queue` que haya
+que ir avanzando. Cada coder, al despertar y con `mtx_dongles` cogido, recalcula
+el ganador con `choose_next_in_queue`: descarta a quien no tiene el par
+disponible y elige el minimo segun `temp_beats_best` (ticket en FIFO, deadline en
+EDF). Al liberar, `compiling_phase` solo marca los dongles `FREE` (con su
+cooldown) y hace `broadcast`; no elige a nadie.
+
+Por que: un cursor almacenado queda obsoleto tras un release, un cooldown
+vencido o la salida de un coder (burnout/parada). Recalcular bajo el mutex
+siempre da una respuesta coherente con el estado actual.
+
+Consecuencia obligatoria: la adquisicion (`wait_for_dongles`) debe comprobar
+"soy el elegido" dentro del `while`. Sin esa comprobacion gana el primer hilo que
+despierte y el scheduler no arbitra nada.
+
+**Deuda de estructura:** el subject pide una cola de prioridad (heap).
+`choose_next_in_queue` hoy es un recorrido lineal sobre el array dinamico; falta
+sustituirlo por un heap real.
 
 ### Micro-objetivos
 
