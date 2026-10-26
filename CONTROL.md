@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 6 **CERRADO**; la simulación termina por éxito o por burnout)
+## Estado actual (Hito 6 **CERRADO**; Hito 4 en progreso: cola y ciclo de vida cerrados, elección pendiente)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -116,6 +116,27 @@
     la comparacion de punteros y la seleccion fifo/edf con strcmp. Verificado con
     make fclean && make all, norminette coders/*.c coders/*.h y una prueba de
     humo de 3 coders sin bloqueo.
+- [x] 4.1c Cola unica y refactor de estructura (2026-10-26). Se eliminan
+  waiting_queue, waiting_count y next_in_queue; scheduler_queue (items/size/
+  capacity) queda como unico dueno de las solicitudes. init_waiting_queue reserva
+  una sola vez, fija size = 0 y capacity = number_of_coders, y deja la cola vacia
+  si el malloc falla. enqueue_coder usa size/capacity con guarda defensiva y
+  comparacion de punteros; choose_next_in_queue descarta coders que no estan en
+  REQUEST_WAITING.
+  - Verificado 2026-10-26: make re verde, norminette 11/11, smoke 3/3 exit=0,
+    n == 1 burnout limpio y Valgrind sin fugas ni errores.
+  - El scheduler sigue SIN integrarse: choose_next_in_queue se descarta y
+    wait_for_dongles solo mira disponibilidad. El ciclo de vida se cerro en 4.2;
+    queda aplicar la eleccion en el predicado de espera.
+- [x] 4.2 Ciclo de vida de la solicitud (2026-10-26). dequeue_coder retira al
+  ganador por puntero (swap-and-pop, no-op si no esta) y block_dongles resetea
+  waiting a REQUEST_NOT_WAITING bajo mtx_dongles, tambien en la salida por
+  burnout.
+  - Verificado con gdb: size baja exactamente 1 tras la retirada; en 2 rondas
+    hay 6 enqueues con tickets 0..5 y la segunda ronda de cada coder recibe un
+    ticket mayor.
+  - Verificado en ejecucion: make re verde, norminette 11/11, smoke 3/3 con
+    cooldown 1 y 300, EDF 2/2, n == 1 burnout limpio y valgrind sin fugas.
 
 - [x] **3.4 — el cooldown sin timbre.** **CERRADO (2026-10-21).** `block_dongles`
   decide dentro del `while`: `cooldowns_deadline` → `DEADLINE_NEVER` ⇒ `cond_wait`;
@@ -145,7 +166,7 @@
 
 ### Falta (núcleo concorrente por delante)
 
-`simulation_status` (2.9) y monitor/terminacion (Hito 6) **cerrados**; colas FIFO/EDF (Hito 4-5) **en progreso** (eleccion on-demand ya escrita, build verde; falta integracion y heap), estres y errores (Hito 7).
+`simulation_status` (2.9) y monitor/terminacion (Hito 6) **cerrados**; cola unica y ciclo de vida de la solicitud **cerrados con build verde** (2026-10-26), pero la eleccion aun no gobierna la adquisicion: faltan predicado de eleccion, desempate EDF y heap. Estres y errores (Hito 7) pendientes.
 
 ---
 
@@ -399,22 +420,69 @@ Consecuencia obligatoria: la adquisicion (`wait_for_dongles`) debe comprobar
 despierte y el scheduler no arbitra nada.
 
 **Deuda de estructura:** el subject pide una cola de prioridad (heap).
-`choose_next_in_queue` hoy es un recorrido lineal sobre el array dinamico; falta
-sustituirlo por un heap real.
+`choose_next_in_queue` hoy es un recorrido lineal sobre el array dinamico; el
+heap real es el micro-objetivo **4.5**, no el 4.1. Primero se cierra la semantica
+(4.2-4.4) y despues se cambia la estructura sin tocar la adquisicion.
+
+**Estado (2026-10-26):** la cola ya es unica (`scheduler_queue`) y el ciclo de
+vida esta cerrado: `dequeue_coder` retira al ganador y `block_dongles` resetea
+`waiting`, todo bajo `mtx_dongles`. Build verde, Norminette 11/11 y valgrind
+limpio. Sigue pendiente: hacer que `wait_for_dongles` exija ser el elegido,
+desempate EDF y sustituir el escaneo lineal por un heap.
 
 ### Micro-objetivos
 
-- [ ] **4.1** Crear `scheduler.c` con un heap/array dinámico: `t_queue` con `malloc`, `push`, `pop_min`, `destroy`. Sin globals: el heap vive en `t_control` (o en la estructura de dongles) y se accede bajo `mtx_dongles`.
-- [ ] **4.2** Definir la clave FIFO: contador monótono de llegada (`arrival_seq`) asignado bajo mutex al entrar en la cola.
-- [ ] **4.3** Integrar: al no poder adquirir, el coder se `push` en la cola FIFO y espera en condvar. Al liberarse un dongle, el "relevo"/broadcast hace que los candidatos compitan; el heap devuelve al de menor `arrival_seq`.
-- [ ] **4.4** Evitar starving simple: con FIFO y N dongles, comprobar empíricamente que todos avanzan en rondas razonables.
-- [ ] **4.5** Tests: mismo test de estrés del Hito 3 con `fifo`; verificar en logs orden de concesión coherente con llegadas.
-- [ ] **4.6** `norminette` + sin fugas del heap (`destroy` al final y en rutas de error).
+- [x] **4.1 — Cola única y API de solicitudes (arquitectura A).**
+  - **Alcance:** `t_queue` vive en `t_control` (`scheduler_queue`: `items`,
+    `size`, `capacity`). Una sola reserva en `init_waiting_queue` con
+    `size = 0` y `capacity = number_of_coders`; liberación en `free_control`.
+    Sin globals y siempre bajo `mtx_dongles`.
+  - **Operaciones:** `enqueue_coder` (append único, comparación de punteros,
+    guarda de capacidad), `dequeue_coder` (retirada por identidad; no-op segura
+    si no está) y `choose_next_in_queue` (mejor par disponible por
+    ticket/deadline, ignorando `waiting != REQUEST_WAITING`).
+  - **Invariante:** `size` == nº de coders con `waiting == REQUEST_WAITING`,
+    cada uno una vez, y `size <= capacity`.
+  - **No incluye:** heap ni `pop_min`. El almacenamiento es un array plano con
+    escaneo lineal; el heap real es el **4.5**. Por eso no se crea
+    `scheduler.c`: la decisión A mantiene la lógica en `queue.c`/`queue_aux.c`.
+  - **Cierre:** `make re` verde, `norminette` 11/11, smoke 3/3, `n == 1`
+    limpio, valgrind sin fugas y gdb con `capacity`/`size` correctos.
+  - **Cerrado 2026-10-26.**
+- [x] **4.2 — Ciclo de vida de la solicitud (2026-10-26).** Registrar una sola
+  vez, retirar al ganador y resetear `waiting` a `REQUEST_NOT_WAITING`, todo bajo
+  `mtx_dongles`. Al terminar la ronda, el siguiente `register_request` asigna un
+  ticket nuevo. Invariante de 4.1 verificada tras cada adquisición.
+  - **Cierre:** gdb confirma que `size` baja 1 al retirar y que los tickets de la
+    segunda ronda son mayores; build, norminette, smoke FIFO/EDF, `n == 1` y
+    valgrind limpios.
+- [ ] **4.3 — Predicado de elección.** `wait_for_dongles` solo sale si
+  `choose_next_in_queue(control) == coder` (o si la simulación se detiene). Tras
+  marcar el par `BLOCKED`, `broadcast` antes del `unlock` para que dos pares
+  disjuntos puedan compilar en paralelo.
+- [ ] **4.4 — Desempate EDF.** A igual `deadline`, gana el menor `ticket`.
+  Verificar que con deadlines iguales el orden es determinista y que con
+  parámetros viables nadie se agota.
+- [ ] **4.5 — Heap de prioridad real.** Sustituir el array plano y el escaneo
+  lineal por un min-heap (ticket en FIFO; deadline + ticket en EDF). Definir la
+  política cuando el mínimo tiene el par bloqueado o en cooldown (por ejemplo,
+  sacar temporalmente los no servibles y reinsertarlos). API: init, push,
+  remove, peek/elect y destroy; mismas garantías e invariantes que 4.3.
+- [ ] **4.6 — Estrés y justicia.** FIFO y EDF con N = 1, 2, 3, 4, cooldown 0 y
+  alto, `compiles = 1`, varias decenas de runs. Parser de logs para detectar
+  solapamientos de compilación con dongles compartidos y comprobar el orden.
+- [ ] **4.7 — Cierre.** Norminette, valgrind (éxito, burnout y rutas de error),
+  helgrind/TSan si el entorno lo permite y cleanup completo de
+  `pthread_create` (incluido el monitor).
 
 ### Criterios de aceptación del Hito 4
 
-- Heap asignado con `malloc` y liberado siempre (éxito, burnout y error).
-- Con `fifo`, dos solicitudes casi simultáneas se atienden en orden de llegada (verificable con logs en ejecución controlada).
+- Una sola cola posee las solicitudes y su invariante se cumple.
+- Con `fifo`, dos solicitudes simultáneas se atienden en orden de llegada.
+- Con `edf`, los deadlines mandan y el empate lo rompe el ticket.
+- El heap existe, se libera siempre y no rompe la semántica de pares no
+  disponibles.
+- Nadie compila a la vez compartiendo un dongle; dos pares disjuntos sí pueden.
 
 ---
 

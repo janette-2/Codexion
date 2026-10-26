@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/24 19:46:58 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 19:35:01 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/26 22:31:25 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -30,20 +30,22 @@ void	enqueue_coder(t_control *control, t_coder *coder)
 	int	i;
 
 	i = 0;
-	if (!control->waiting_count)
+	if (control->scheduler_queue.size >= control->scheduler_queue.capacity)
+		return ;
+	if (!control->scheduler_queue.size)
 	{
-		control->waiting_queue[0] = coder;
-		control->waiting_count++;
+		control->scheduler_queue.items[0] = coder;
+		control->scheduler_queue.size++;
 		return ;
 	}
-	while (i < control->waiting_count)
+	while (i < control->scheduler_queue.size)
 	{
-		if (control->waiting_queue[i] == coder)
+		if (control->scheduler_queue.items[i] == coder)
 			return ;
 		i++;
 	}
-	control->waiting_queue[control->waiting_count] = coder;
-	control->waiting_count++;
+	control->scheduler_queue.items[control->scheduler_queue.size] = coder;
+	control->scheduler_queue.size++;
 	return ;
 }
 
@@ -68,12 +70,17 @@ t_coder	*choose_next_in_queue(t_control *control)
 
 	i = 0;
 	best = NULL;
-	while (i < control->waiting_count)
+	while (i < control->scheduler_queue.size)
 	{
-		temp = control->waiting_queue[i];
+		temp = control->scheduler_queue.items[i];
 		if (dongles_available(
 				control, temp->left_dongle, temp->right_dongle) == 1)
 		{
+			if (temp->waiting == REQUEST_NOT_WAITING)
+			{
+				i++;
+				continue ;
+			}
 			if (best == NULL || temp_beats_best(temp, best, control))
 				best = temp;
 		}

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/25 20:13:22 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/26 23:40:20 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -71,7 +71,6 @@ struct s_queue
 	int			capacity;
 };
 
-
 struct s_control
 {
 	int				number_of_coders;
@@ -90,11 +89,8 @@ struct s_control
 	pthread_mutex_t	mtx_dongles;
 	pthread_mutex_t	mtx_log;
 	pthread_cond_t	cond_dongles;
-	t_coder			**waiting_queue;
 	t_queue			scheduler_queue;
-	int				waiting_count;
 	long long		next_ticket;
-	t_coder			*next_in_queue;
 };
 
 /* INIT.C */
@@ -143,5 +139,6 @@ long long	deadline(t_coder *coder);
 
 /* QUEUE_AUX.C */
 int			init_waiting_queue(t_control *control);
+void		dequeue_coder(t_coder *coder);
 
 #endif

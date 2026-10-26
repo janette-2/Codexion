@@ -202,33 +202,41 @@ Contains the resource-availability helpers:
   available, or `DEADLINE_NEVER` when no such instant exists yet.
 - `log_line`: the serialised log formatter.
 
-### `queue.c`
+### `queue.c` and `queue_aux.c`
 
-Holds the scheduler queue and the arbitration helpers:
+Hold the single scheduler queue and the arbitration helpers:
 
-- `init_waiting_queue`: allocates the `t_coder *` array on the heap
-  (`number_of_coders` slots). Called during control initialisation and freed on
-  every exit path.
+- `init_waiting_queue` (`queue_aux.c`): allocates the only `t_coder *` array
+  (`scheduler_queue.items`, `number_of_coders` slots), then sets `size = 0` and
+  `capacity = number_of_coders`. A failed allocation leaves `items = NULL`,
+  `size = 0` and `capacity = 0`. The array is freed on every exit path.
 - `register_request`: assigns a monotonic `ticket` and marks the coder as
   `REQUEST_WAITING`. It runs under `mtx_dongles`, so the ticket order matches the
   order in which requests reached the critical section.
-- `enqueue_coder`: appends the coder to `waiting_queue` and increments
-  `waiting_count`. Its duplicate check is currently broken, so the intended
-  "append once" behaviour still has to be fixed.
+- `enqueue_coder`: appends the coder once to `scheduler_queue`, using `size` as
+  the insertion index and respecting `capacity`. The duplicate check compares
+  coder pointers.
+- `dequeue_coder` (`queue_aux.c`): removes the coder by pointer using
+  swap-and-pop, clears the vacated slot and decrements `size`. It is a safe no-op
+  when the coder is absent and must be called with `mtx_dongles` held.
 - `deadline`: returns the absolute burnout instant,
   `last_compilation + time_to_burnout`. It does **not** read the current clock;
   it is a date, not a remaining time.
 - `temp_beats_best`: the comparator. In `fifo` the smaller ticket wins; in `edf`
   the smaller deadline wins. Equal deadlines have no tie-break yet; adding the
   ticket as a tie-break is recommended for determinism.
-- `choose_next_in_queue`: the election. It scans the waiting coders, keeps only
-  those whose two dongles are available (`dongles_available`), and returns the
-  best one according to `temp_beats_best`. It is called with `mtx_dongles`
-  held.
+- `choose_next_in_queue`: the election. It scans `scheduler_queue`, ignores
+  coders that are not `REQUEST_WAITING`, keeps only those whose two dongles are
+  available (`dongles_available`), and returns the best one according to
+  `temp_beats_best`. It is called with `mtx_dongles` held.
 
-The design does not keep a mutable `next_in_queue` cursor. The winner is
-recomputed on demand from the queue and the current dongle state, which avoids a
-stale cursor after a release, a cooldown expiry or a coder leaving the queue.
+The queue is the single owner of pending requests: `waiting_queue`,
+`waiting_count` and the mutable `next_in_queue` cursor were removed. The winner
+is recomputed on demand from the queue and the current dongle state, which avoids
+a stale cursor after a release, a cooldown expiry or a coder leaving the queue.
+
+The queue is still a flat array with a linear scan; replacing the scan with a
+real binary heap is pending (the subject requires one).
 
 ### `sync.c`
 
@@ -657,8 +665,9 @@ the current dongle state:
    (`enqueue_coder`), both under `mtx_dongles`.
 2. It waits on `cond_dongles`. A release marks both dongles free and broadcasts;
    it does not hand-pick the next coder.
-3. On wake-up, every waiter asks `choose_next_in_queue` who wins. Only that
-   coder marks the pair as blocked and leaves the queue.
+3. On wake-up, every waiter asks `choose_next_in_queue` who wins. In the target
+   model only that coder marks the pair as blocked and leaves the queue; the
+   current acquisition path does not enforce this yet.
 
 `choose_next_in_queue` ignores coders whose pair is not available, so a coder
 blocked on a busy dongle cannot stall a coder whose pair is free. For FIFO the
@@ -680,6 +689,10 @@ The acquire path still has to enforce the election inside its wait condition:
 `wait_for_dongles` must not return unless `choose_next_in_queue` returns the
 current coder. Until then, the first woken thread can take the pair and the
 scheduler is not fair.
+
+The request lifecycle is closed: the winner removes itself from the queue and
+resets `waiting` under `mtx_dongles`, so its next round registers a fresh
+ticket.
 
 ---
 
@@ -966,33 +979,35 @@ Important constraints include:
 - Monitor thread creation and joining, with success detection
   (`SIM_FINISHED`) when every coder completes its required compilations.
 
-### In progress — scheduler (2026-10-25)
+### Scheduler refactor (2026-10-26)
 
-- Queue storage allocated on the heap (`init_waiting_queue`).
+- Single heap-allocated request array (`scheduler_queue`) owned by the control
+  structure; `waiting_queue`, `waiting_count` and `next_in_queue` removed.
+- `init_waiting_queue` sets `size = 0` and `capacity = number_of_coders`; a
+  failed allocation leaves the queue empty and releases nothing.
 - Monotonic ticket assignment via `register_request`.
-- `enqueue_coder` is intended to append a coder once and update
-  `waiting_count`; its duplicate check is still broken.
+- `enqueue_coder` appends a coder once, using `size` as the index and respecting
+  `capacity`; the duplicate check compares pointers.
+- `dequeue_coder` removes the winner by pointer (swap-and-pop); `block_dongles`
+  resets `waiting` under `mtx_dongles`, including on the burnout exit path.
+  Verified with gdb: `size` drops by one and each new round gets a higher ticket.
 - `deadline` returns `last_compilation + time_to_burnout`.
 - `temp_beats_best` implements the FIFO (ticket) and EDF (deadline) keys.
-- `choose_next_in_queue` elects the best coder whose pair is available.
+- `choose_next_in_queue` ignores coders that are not `REQUEST_WAITING` and elects
+  the best coder whose pair is available.
+- At the close of the queue and lifecycle work (2026-10-26), `make re` was green,
+  `norminette` was 11/11 and Valgrind reported no leaks or errors on the smoke
+  tests.
 
-The scheduler is not integrated yet and the build is currently red. Pending:
+The scheduler is **not integrated** into the acquisition path yet. Pending:
 
-- Declare `enqueue_coder` in `codexion.h`.
-- Remove the call to the non-existent `assign_next_in_queue` in `compiling.c`.
-- Fix `enqueue_coder`: the membership test compares an `int` with a pointer.
-- Use `strcmp` instead of `==` for the scheduler name in `temp_beats_best`, and
-  give it a return path on every branch.
-- Remove the unused `coder` parameter from `choose_next_in_queue`.
-- Index `waiting_queue` with `waiting_count`, not `next_ticket - 1`.
-- Register each request once (`register_request` plus `enqueue_coder` currently
-  insert twice).
 - Enforce the election in the acquire wait condition (see FIFO section).
-- Replace the linear scan with a real priority queue (heap).
+- Add a ticket tie-break for equal EDF deadlines.
+- Replace the linear scan with a real priority queue (heap), as the subject
+  requires.
 
 ### Still to implement
 
-- Monitor sampling sleep (poll interval ≤5 ms) for burnout precision.
 - FIFO queue integration and heap.
 - EDF queue integration and tie-break verification.
 - Full error cleanup for thread creation.
