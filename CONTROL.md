@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 6 **CERRADO**; Hito 4 en progreso: cola y ciclo de vida cerrados, elección pendiente)
+## Estado actual (Hito 6 **CERRADO**; Hito 4 en progreso: cola, ciclo de vida y predicado cerrados; desempate EDF pendiente)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -415,20 +415,109 @@ Por que: un cursor almacenado queda obsoleto tras un release, un cooldown
 vencido o la salida de un coder (burnout/parada). Recalcular bajo el mutex
 siempre da una respuesta coherente con el estado actual.
 
-Consecuencia obligatoria: la adquisicion (`wait_for_dongles`) debe comprobar
-"soy el elegido" dentro del `while`. Sin esa comprobacion gana el primer hilo que
-despierte y el scheduler no arbitra nada.
+Consecuencia obligatoria: la adquisicion (`wait_for_dongles`) comprueba "soy el
+elegido" dentro del `while` (cerrado en 4.3). Sin esa comprobacion gana el primer
+hilo que despierte y el scheduler no arbitra nada.
 
 **Deuda de estructura:** el subject pide una cola de prioridad (heap).
 `choose_next_in_queue` hoy es un recorrido lineal sobre el array dinamico; el
 heap real es el micro-objetivo **4.5**, no el 4.1. Primero se cierra la semantica
 (4.2-4.4) y despues se cambia la estructura sin tocar la adquisicion.
 
-**Estado (2026-10-26):** la cola ya es unica (`scheduler_queue`) y el ciclo de
-vida esta cerrado: `dequeue_coder` retira al ganador y `block_dongles` resetea
-`waiting`, todo bajo `mtx_dongles`. Build verde, Norminette 11/11 y valgrind
-limpio. Sigue pendiente: hacer que `wait_for_dongles` exija ser el elegido,
-desempate EDF y sustituir el escaneo lineal por un heap.
+**Estado (2026-10-28):** la cola es unica (`scheduler_queue`), el ciclo de vida
+esta cerrado (`dequeue_coder` + reset de `waiting`) y la adquisicion exige ser
+el elegido (`wait_for_dongles`). Build verde, Norminette 11/11 y valgrind limpio.
+Sigue pendiente: desempate EDF y sustituir el escaneo lineal por un heap.
+
+### Notas de estudio (2026-10-28): predicado, broadcast y espera
+
+**1. Por que el mutex no basta.** `mtx_dongles` garantiza exclusion mutua: dos
+hilos no marcan el mismo par a la vez. Pero no decide *quien* debe pasar. Sin
+predicado, el primer hilo que despierta y consigue el mutex se lleva el par; el
+orden de llegada (`ticket`) no se respeta. El scheduler solo existe si la
+adquisicion consulta la eleccion.
+
+**2. Que debe expresar el `while`.** Hay que seguir esperando mientras la
+simulacion siga viva **y no se cumpla** la condicion de salida, que es "(mi par
+esta disponible) **y** (soy el elegido)". En logica:
+
+```text
+running && !(available && elected)
+```
+
+Aplicando De Morgan:
+
+```text
+running && (!available || elected != coder)
+```
+
+La primera version escrita fue `!available && running && !elected`. Es un error:
+solo espera cuando fallan **las dos** condiciones. Si el par esta libre pero el
+coder no es el elegido, sale y roba el turno.
+
+| disponible | elegido | debe esperar | `!A && !B` | `!(A && B)` |
+|---|---|---|---|---|
+| 0 | 0 | si | si | si |
+| 0 | 1 | si (imposible) | si | si |
+| 1 | 0 | **si** | **no (bug)** | si |
+| 1 | 1 | no | no | no |
+
+La fila 3 es la que rompe FIFO/EDF: tener el par libre no basta; hay que ser el
+elegido.
+
+**3. Cortocircuito.** En `disponible == 0 || elegido != coder`, si `disponible`
+es falso se consulta la eleccion; si es verdadero (par no disponible), no hace
+falta: `choose_next_in_queue` solo puede devolver coders con el par disponible,
+asi que este coder no puede ser el elegido. Esto ahorra trabajo y evita que un
+coder bloqueado fuerce un escaneo.
+
+**4. Por que `broadcast` justo despues de marcar el par.** El ganador marca sus
+dos dongles `BLOCKED` y hace `broadcast` antes de soltar `mtx_dongles`. Al
+despertar, los demas recalculan: los pares disjuntos ven sus dongles libres y
+compilan en paralelo; los que comparten algun dongle vuelven a dormir. Sin
+`broadcast`, solo despertarian por timeout/cooldown y se perderia paralelismo.
+Se usa `broadcast` y no `signal` porque no hay un unico sucesor valido: puede
+haber varios pares disjuntos. El coste es el *thundering herd* (N coders
+despiertan y compiten por el mutex), aceptable con N pequeno y preferible a
+elegir a mano un destinatario que podria no ser el siguiente.
+
+**5. Por que a veces `cond_wait` y a veces `timedwait`.** `cooldowns_deadline`
+devuelve el mayor `available_at` de los dos dongles, pero solo si ambos estan
+`FREE`; si alguno esta `BLOCKED` (o `left == right`) devuelve `DEADLINE_NEVER`.
+Cuando el par ya esta disponible, ese instante es `<= now`. Usar `timedwait` con
+una fecha pasada retorna de inmediato y produce busy-spin (elegir, timeout,
+elegir...). Por eso:
+
+- `DEADLINE_NEVER` → `cond_wait`: alguien hara `broadcast` al liberar.
+- deadline `<= now` → `cond_wait`: el par ya esta libre; si no soy el elegido,
+  el ganador hara `broadcast` al adquirir.
+- deadline futuro → `timedwait`: hay un cooldown real que debe vencer aunque
+  nadie libere nada.
+
+Todo cambio de estado ocurre bajo `mtx_dongles` y va seguido de `broadcast` antes
+del `unlock`, asi que no se pierde ningun despertar.
+
+**6. Por que retirar al ganador antes del `unlock`.** `dequeue_coder` y el reset
+de `waiting` ocurren con el mutex cogido. Cuando los demas despiertan, ya no ven
+al ganador en la cola; si se retirara despues, podrian elegirlo otra vez y dos
+hilos intentarian el mismo par. El reset mantiene la invariante de 4.1.
+
+**7. Work-conserving, no FIFO estricto.** `choose_next_in_queue` filtra por
+`dongles_available`; un ticket bajo bloqueado no paraliza a un ticket alto cuyo
+par esta libre. FIFO/EDF deciden entre los **servibles**, no sobre todos los
+pendientes. Esto maximiza compilaciones y evita esperar por un par que no puede
+avanzar.
+
+**Verificacion (2026-10-28).**
+
+- `make re` verde y `norminette` 11/11.
+- Smoke N=1,2,3,4,5; FIFO/EDF; cooldown 1, 30, 50, 300; 5 runs de 5 coders:
+  sin cuelgues, sin burnouts inesperados y compiles completos.
+- Valgrind sin fugas ni errores.
+- gdb (N=4, FIFO): tickets 0 y 2 adquieren en paralelo (pares disjuntos);
+  despues 1 y 3. gdb (N=3, FIFO, todos los pares se solapan): la secuencia de
+  adquisicion es 0,1,2,...,8, luego FIFO se respeta.
+- Pendiente: desempate EDF (4.4) y heap (4.5).
 
 ### Micro-objetivos
 
@@ -456,10 +545,15 @@ desempate EDF y sustituir el escaneo lineal por un heap.
   - **Cierre:** gdb confirma que `size` baja 1 al retirar y que los tickets de la
     segunda ronda son mayores; build, norminette, smoke FIFO/EDF, `n == 1` y
     valgrind limpios.
-- [ ] **4.3 — Predicado de elección.** `wait_for_dongles` solo sale si
-  `choose_next_in_queue(control) == coder` (o si la simulación se detiene). Tras
-  marcar el par `BLOCKED`, `broadcast` antes del `unlock` para que dos pares
-  disjuntos puedan compilar en paralelo.
+- [x] **4.3 — Predicado de elección (2026-10-28).** `wait_for_dongles` solo sale
+  si el par está disponible **y** `choose_next_in_queue(control) == coder` (o si
+  la simulación se detiene). Tras marcar el par `BLOCKED`, `broadcast` antes del
+  `unlock` para que dos pares disjuntos puedan compilar en paralelo.
+  - **Espera:** `cond_wait` si el deadline es `DEADLINE_NEVER` o ya venció;
+    `timedwait` solo si el cooldown es futuro. Evita el busy-spin.
+  - **Cierre:** gdb confirma FIFO estricto con N=3 (`tickets 0..8`) y paralelismo
+    de pares disjuntos con N=4 (`0+2`, luego `1+3`); build, norminette, smoke
+    N=1..5 FIFO/EDF y valgrind limpios.
 - [ ] **4.4 — Desempate EDF.** A igual `deadline`, gana el menor `ticket`.
   Verificar que con deadlines iguales el orden es determinista y que con
   parámetros viables nadie se agota.
@@ -468,8 +562,8 @@ desempate EDF y sustituir el escaneo lineal por un heap.
   política cuando el mínimo tiene el par bloqueado o en cooldown (por ejemplo,
   sacar temporalmente los no servibles y reinsertarlos). API: init, push,
   remove, peek/elect y destroy; mismas garantías e invariantes que 4.3.
-- [ ] **4.6 — Estrés y justicia.** FIFO y EDF con N = 1, 2, 3, 4, cooldown 0 y
-  alto, `compiles = 1`, varias decenas de runs. Parser de logs para detectar
+- [ ] **4.6 — Estrés y justicia.** FIFO y EDF con N = 1, 2, 3, 4, cooldown
+  mínimo (1) y alto, `compiles = 1`, varias decenas de runs. Parser de logs para detectar
   solapamientos de compilación con dongles compartidos y comprobar el orden.
 - [ ] **4.7 — Cierre.** Norminette, valgrind (éxito, burnout y rutas de error),
   helgrind/TSan si el entorno lo permite y cleanup completo de

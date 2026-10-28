@@ -71,13 +71,14 @@ void	wait_for_dongles(t_coder *coder)
 	long long		deadline_cool;
 	struct timespec	when;
 
-	while (dongles_available(
-			coder->control, coder->left_dongle, coder->right_dongle) == 0
-		&& coder->control->simulation_status == SIM_RUNNING)
+	while (coder->control->simulation_status == SIM_RUNNING
+		&& (dongles_available(
+				coder->control, coder->left_dongle, coder->right_dongle) == 0
+			|| choose_next_in_queue(coder->control) != coder))
 	{
 		deadline_cool = cooldowns_deadline(coder->control,
 				coder->left_dongle, coder->right_dongle);
-		if (deadline_cool == DEADLINE_NEVER)
+		if (deadline_cool == DEADLINE_NEVER || deadline_cool <= current_time())
 		{
 			pthread_cond_wait(
 				&coder->control->cond_dongles, &coder->control->mtx_dongles);

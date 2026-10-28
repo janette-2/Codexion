@@ -665,9 +665,9 @@ the current dongle state:
    (`enqueue_coder`), both under `mtx_dongles`.
 2. It waits on `cond_dongles`. A release marks both dongles free and broadcasts;
    it does not hand-pick the next coder.
-3. On wake-up, every waiter asks `choose_next_in_queue` who wins. In the target
-   model only that coder marks the pair as blocked and leaves the queue; the
-   current acquisition path does not enforce this yet.
+3. On wake-up, every waiter recomputes `choose_next_in_queue` while holding
+   `mtx_dongles`. Only the elected coder leaves the wait loop, marks its pair as
+   blocked, broadcasts and then removes itself from the queue.
 
 `choose_next_in_queue` ignores coders whose pair is not available, so a coder
 blocked on a busy dongle cannot stall a coder whose pair is free. For FIFO the
@@ -677,22 +677,54 @@ wins.
 Recomputing on demand avoids a stale cursor after a release, a cooldown expiry
 or a coder leaving the queue (burnout or termination).
 
+### Wait predicate and progress
+
+The wait loop keeps a coder asleep while the simulation runs and it is not both
+available and elected: logically `running && !(available && elected)`. Writing
+it as `!available && !elected` is wrong: a coder whose pair is free but is not
+the elected one would leave the loop and steal the pair. De Morgan's law gives
+the safe form `running && (!available || elected != coder)`. The availability
+test comes first, so `choose_next_in_queue` is only called when the pair could
+actually be taken.
+
+After the winner marks both dongles `BLOCKED`, it broadcasts before releasing
+the mutex. Waiters recompute: disjoint pairs see their dongles free and compile
+in parallel, while overlapping pairs sleep again. A broadcast (not a signal) is
+needed because several disjoint pairs may be valid successors; the extra
+wake-ups are bounded by the number of coders.
+
+The wait uses the condition variable in two modes. `cooldowns_deadline` returns
+`DEADLINE_NEVER` when a dongle is blocked, and otherwise the later
+`available_at`. If that instant is in the past (the pair is already free), a
+timed wait would return immediately and spin. So a coder waits without timeout
+when the deadline is `DEADLINE_NEVER` or `<= now`, and uses `timedwait` only for
+a real future cooldown. Every state change happens under `mtx_dongles` followed
+by a broadcast, so no wake-up is lost.
+
+The winner removes itself from the queue and resets `waiting` before unlocking,
+so no other waiter can elect a coder that has already acquired or left.
+
 ### Heap requirement
 
 The subject requires a priority queue (heap) for scheduling. The current code
 uses a heap-allocated array plus a linear scan; replacing the scan with a heap
 is still pending. The array itself is already dynamic, as required.
 
-### Pending integration
+### Integration status
 
-The acquire path still has to enforce the election inside its wait condition:
-`wait_for_dongles` must not return unless `choose_next_in_queue` returns the
-current coder. Until then, the first woken thread can take the pair and the
-scheduler is not fair.
+The acquisition path enforces the election: a coder only leaves
+`wait_for_dongles` when it is both available and elected. The request lifecycle
+is closed too: the winner marks its pair, broadcasts, removes itself from the
+queue and resets `waiting` under `mtx_dongles`, so its next round registers a
+fresh ticket.
 
-The request lifecycle is closed: the winner removes itself from the queue and
-resets `waiting` under `mtx_dongles`, so its next round registers a fresh
-ticket.
+Remaining scheduler work:
+
+- Add a ticket tie-break for equal EDF deadlines (4.4).
+- Replace the linear scan with a real priority queue/heap (4.5).
+
+Verified with gdb: with N=3 (all pairs overlap) FIFO acquisitions follow tickets
+`0..8`; with N=4 disjoint pairs `0+2` run in parallel, then `1+3`.
 
 ---
 
@@ -995,21 +1027,24 @@ Important constraints include:
 - `temp_beats_best` implements the FIFO (ticket) and EDF (deadline) keys.
 - `choose_next_in_queue` ignores coders that are not `REQUEST_WAITING` and elects
   the best coder whose pair is available.
-- At the close of the queue and lifecycle work (2026-10-26), `make re` was green,
-  `norminette` was 11/11 and Valgrind reported no leaks or errors on the smoke
-  tests.
+- `wait_for_dongles` keeps a coder asleep until it is both available and
+  elected; the winner marks its pair, broadcasts and leaves the queue. It uses
+  `cond_wait` for a past/never cooldown deadline and `timedwait` only for a real
+  future cooldown, avoiding a busy-spin.
+- At the close of the queue, lifecycle and election work (2026-10-28), `make re`
+  was green, `norminette` was 11/11 and Valgrind reported no leaks or errors on
+  the smoke tests.
 
-The scheduler is **not integrated** into the acquisition path yet. Pending:
+The scheduler is integrated into the acquisition path. Pending:
 
-- Enforce the election in the acquire wait condition (see FIFO section).
 - Add a ticket tie-break for equal EDF deadlines.
 - Replace the linear scan with a real priority queue (heap), as the subject
   requires.
 
 ### Still to implement
 
-- FIFO queue integration and heap.
-- EDF queue integration and tie-break verification.
+- Heap-based priority queue (FIFO/EDF election is integrated).
+- EDF tie-break verification with equal deadlines.
 - Full error cleanup for thread creation.
 
 ### Open items
