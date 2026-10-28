@@ -223,8 +223,9 @@ Hold the single scheduler queue and the arbitration helpers:
   `last_compilation + time_to_burnout`. It does **not** read the current clock;
   it is a date, not a remaining time.
 - `temp_beats_best`: the comparator. In `fifo` the smaller ticket wins; in `edf`
-  the smaller deadline wins. Equal deadlines have no tie-break yet; adding the
-  ticket as a tie-break is recommended for determinism.
+  the smaller deadline wins and equal deadlines are broken by the smaller
+  ticket. The ticket gives a total, reproducible order even after the queue
+  order changes through swap-and-pop removal.
 - `choose_next_in_queue`: the election. It scans `scheduler_queue`, ignores
   coders that are not `REQUEST_WAITING`, keeps only those whose two dongles are
   available (`dongles_available`), and returns the best one according to
@@ -720,7 +721,6 @@ fresh ticket.
 
 Remaining scheduler work:
 
-- Add a ticket tie-break for equal EDF deadlines (4.4).
 - Replace the linear scan with a real priority queue/heap (4.5).
 
 Verified with gdb: with N=3 (all pairs overlap) FIFO acquisitions follow tickets
@@ -744,9 +744,11 @@ current clock. `last_compilation` is initialised to `start_time` and updated at
 the start of each real compilation, so every waiting coder has a comparable
 deadline.
 
-`temp_beats_best` compares deadlines (`<`). Two coders can share a deadline;
-there is no tie-break yet, so adding the ticket as a secondary key is
-recommended to keep the result deterministic.
+`temp_beats_best` compares deadlines (`<`) and breaks equal deadlines with the
+smaller ticket (`<`). This matters because the queue is not kept sorted:
+`dequeue_coder` uses swap-and-pop, so the physical order no longer matches the
+arrival order after a removal. The ticket is a unique, monotonically increasing
+key, so the election is deterministic for equal deadlines.
 
 The same election model as FIFO applies: a coder is only grantable if its two
 dongles are available, and the winner is recomputed on demand under
@@ -1024,7 +1026,8 @@ Important constraints include:
   resets `waiting` under `mtx_dongles`, including on the burnout exit path.
   Verified with gdb: `size` drops by one and each new round gets a higher ticket.
 - `deadline` returns `last_compilation + time_to_burnout`.
-- `temp_beats_best` implements the FIFO (ticket) and EDF (deadline) keys.
+- `temp_beats_best` implements the FIFO (ticket) and EDF (deadline + ticket)
+  keys.
 - `choose_next_in_queue` ignores coders that are not `REQUEST_WAITING` and elects
   the best coder whose pair is available.
 - `wait_for_dongles` keeps a coder asleep until it is both available and
@@ -1037,14 +1040,12 @@ Important constraints include:
 
 The scheduler is integrated into the acquisition path. Pending:
 
-- Add a ticket tie-break for equal EDF deadlines.
 - Replace the linear scan with a real priority queue (heap), as the subject
   requires.
 
 ### Still to implement
 
-- Heap-based priority queue (FIFO/EDF election is integrated).
-- EDF tie-break verification with equal deadlines.
+- Heap-based priority queue (FIFO/EDF election and EDF tie-break are integrated).
 - Full error cleanup for thread creation.
 
 ### Open items

@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/24 19:46:58 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/26 22:31:25 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/28 23:35:42 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -59,7 +59,11 @@ int	temp_beats_best(t_coder *temp, t_coder *best, t_control *control)
 	if (strcmp(control->scheduler, "fifo") == 0)
 		return (temp->ticket < best->ticket);
 	else
+	{
+		if (deadline(temp) == deadline(best))
+			return (temp->ticket < best->ticket);
 		return (deadline(temp) < deadline(best));
+	}
 }
 
 t_coder	*choose_next_in_queue(t_control *control)

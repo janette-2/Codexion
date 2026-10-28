@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 6 **CERRADO**; Hito 4 en progreso: cola, ciclo de vida y predicado cerrados; desempate EDF pendiente)
+## Estado actual (Hito 6 **CERRADO**; Hito 4 en progreso: cola, ciclo de vida, predicado y desempate EDF cerrados; heap pendiente)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -425,9 +425,10 @@ heap real es el micro-objetivo **4.5**, no el 4.1. Primero se cierra la semantic
 (4.2-4.4) y despues se cambia la estructura sin tocar la adquisicion.
 
 **Estado (2026-10-28):** la cola es unica (`scheduler_queue`), el ciclo de vida
-esta cerrado (`dequeue_coder` + reset de `waiting`) y la adquisicion exige ser
-el elegido (`wait_for_dongles`). Build verde, Norminette 11/11 y valgrind limpio.
-Sigue pendiente: desempate EDF y sustituir el escaneo lineal por un heap.
+esta cerrado (`dequeue_coder` + reset de `waiting`), la adquisicion exige ser el
+elegido (`wait_for_dongles`) y EDF desempata por ticket. Build verde, Norminette
+11/11 y valgrind limpio. Sigue pendiente: sustituir el escaneo lineal por un
+heap.
 
 ### Notas de estudio (2026-10-28): predicado, broadcast y espera
 
@@ -517,7 +518,7 @@ avanzar.
 - gdb (N=4, FIFO): tickets 0 y 2 adquieren en paralelo (pares disjuntos);
   despues 1 y 3. gdb (N=3, FIFO, todos los pares se solapan): la secuencia de
   adquisicion es 0,1,2,...,8, luego FIFO se respeta.
-- Pendiente: desempate EDF (4.4) y heap (4.5).
+- Pendiente: heap (4.5).
 
 ### Micro-objetivos
 
@@ -554,9 +555,16 @@ avanzar.
   - **Cierre:** gdb confirma FIFO estricto con N=3 (`tickets 0..8`) y paralelismo
     de pares disjuntos con N=4 (`0+2`, luego `1+3`); build, norminette, smoke
     N=1..5 FIFO/EDF y valgrind limpios.
-- [ ] **4.4 — Desempate EDF.** A igual `deadline`, gana el menor `ticket`.
-  Verificar que con deadlines iguales el orden es determinista y que con
-  parámetros viables nadie se agota.
+- [x] **4.4 — Desempate EDF (2026-10-28).** A igual `deadline`, gana el menor
+  `ticket`. Verificar que con deadlines iguales el orden es determinista y que
+  con parámetros viables nadie se agota.
+  - **Por que:** el orden del array cambia con el swap-and-pop de
+    `dequeue_coder`; sin desempate, dos ejecuciones pueden elegir distinto coder
+    ante deadlines iguales. El ticket da un orden total y reproducible.
+  - **Cierre:** prueba unitaria con la cola desordenada: empate de tickets 5/3
+    gana 3 en ambos órdenes; tres deadlines iguales con tickets 5,1,3 gana 1;
+    un deadline menor gana aunque el ticket sea mayor; FIFO sigue intacto.
+    Build y Norminette verdes; smoke FIFO/EDF y valgrind sin errores.
 - [ ] **4.5 — Heap de prioridad real.** Sustituir el array plano y el escaneo
   lineal por un min-heap (ticket en FIFO; deadline + ticket en EDF). Definir la
   política cuando el mínimo tiene el par bloqueado o en cooldown (por ejemplo,
