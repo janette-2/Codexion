@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/29 20:15:47 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/29 22:10:25 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -146,5 +146,13 @@ void		dequeue_coder(t_coder *coder);
 /* HEAP_TOOLS.C */
 int			heap_better(t_coder *a, t_coder *b, t_control *control);
 void		heap_swap(t_coder *a, t_coder *b, t_control *control);
+void		heap_up(t_control *control, int i);
+void		heap_down(t_control *control, int i);
+
+/* HEAP_TOOLS_AUX.C */
+void		heap_push(t_control *control, t_coder *coder);
+t_coder		*heap_peek(t_control *control);
+t_coder		*heap_pop(t_control *control);
+void		heap_remove(t_control *control, t_coder *coder);
 
 #endif

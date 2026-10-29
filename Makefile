@@ -12,7 +12,8 @@ SRC = coders/main.c \
 	coders/simulation.c \
 	coders/queue.c \
 	coders/queue_aux.c \
-	coders/heap_tools.c
+	coders/heap_tools.c \
+	coders/heap_tools_aux.c
 
 OBJ = $(SRC:.c=.o)
 
