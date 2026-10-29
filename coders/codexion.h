@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/26 23:40:20 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/29 20:15:47 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -55,6 +55,7 @@ struct s_coder
 	int				right_dongle;
 	long long		ticket;
 	int				waiting;
+	int				heap_pos;
 };
 
 struct s_dongle
@@ -91,6 +92,7 @@ struct s_control
 	pthread_cond_t	cond_dongles;
 	t_queue			scheduler_queue;
 	long long		next_ticket;
+	t_coder			**deferred;
 };
 
 /* INIT.C */
@@ -140,5 +142,9 @@ long long	deadline(t_coder *coder);
 /* QUEUE_AUX.C */
 int			init_waiting_queue(t_control *control);
 void		dequeue_coder(t_coder *coder);
+
+/* HEAP_TOOLS.C */
+int			heap_better(t_coder *a, t_coder *b, t_control *control);
+void		heap_swap(t_coder *a, t_coder *b, t_control *control);
 
 #endif

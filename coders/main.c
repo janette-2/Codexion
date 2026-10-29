@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/09/29 17:52:45 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/26 22:17:12 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/29 19:41:33 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -29,6 +29,11 @@ void	free_control(t_control *control)
 		free(control->scheduler_queue.items);
 		control->scheduler_queue.items = NULL;
 	}
+	if (control->deferred)
+	{
+		free(control->deferred);
+		control->deferred = NULL;
+	}
 }
 
 void	init_control(t_control *control)
@@ -39,6 +44,7 @@ void	init_control(t_control *control)
 	control->scheduler_queue.items = NULL;
 	control->scheduler_queue.size = 0;
 	control->scheduler_queue.capacity = 0;
+	control->deferred = NULL;
 }
 
 int	main(int argc, char *arg[])
