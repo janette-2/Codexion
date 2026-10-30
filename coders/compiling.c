@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/28 21:15:58 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/30 21:00:51 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,6 +21,7 @@ void	block_dongles(t_coder *coder)
 	if (coder->control->simulation_status == SIM_RUNNING)
 	{
 		put_dongles_blocked(coder);
+		coder->last_compilation = current_time();
 		pthread_cond_broadcast(&coder->control->cond_dongles);
 	}
 	dequeue_coder(coder);
@@ -31,12 +32,11 @@ void	block_dongles(t_coder *coder)
 void	compiling_phase(t_coder *coder)
 {
 	block_dongles(coder);
-	if (coder->control->simulation_status != SIM_RUNNING)
+	if (!simulation_is_running(coder->control))
 		return ;
 	log_line(coder->control, LOG_TAKEN, coder->id);
 	log_line(coder->control, LOG_TAKEN, coder->id);
 	log_line(coder->control, LOG_COMPILING, coder->id);
-	coder->last_compilation = current_time();
 	usleep(coder->control->time_to_compile * 1000);
 	pthread_mutex_lock(&coder->control->mtx_dongles);
 	coder->number_of_compiles_done++;
@@ -72,10 +72,10 @@ void	*coder_routine(void *arg)
 	coder = (t_coder *)arg;
 	compiles_required = coder->control->number_of_compiles_required;
 	while (coder->number_of_compiles_done < compiles_required
-		&& coder->control->simulation_status == SIM_RUNNING)
+		&& simulation_is_running(coder->control))
 	{
 		compiling_phase(coder);
-		if (coder->control->simulation_status == SIM_RUNNING)
+		if (simulation_is_running(coder->control))
 		{
 			debugging_phase(coder);
 			refactoring_phase(coder);

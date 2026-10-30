@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/30 18:40:41 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/30 20:58:13 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -113,10 +113,12 @@ int			run_simulation(t_control *control);
 long long	current_time(void);
 void		ms_to_timespec(long long ms, struct timespec *when);
 void		*monitor_routine(void *arg);
+int			scan_coders_locked(t_control *control, int *finish_coders);
 
 /* SYNC.C */
 int			init_sync(t_control *control);
 void		destroy_sync(t_control *control, int created);
+int			simulation_is_running(t_control *control);
 
 /* RESOURCES.C */
 int			dongles_available(t_control *control, int left_id, int right_id);

@@ -789,10 +789,13 @@ The monitor loop implements both outcomes:
   coder) it logs `X burned out`, sets `SIM_STOPPED` and returns. It stops at the
   first burnout it finds, logging a single `burned out` line.
 
-The burnout decision, the state change and the wake-up happen together in one
-helper (`stop_simulation`), taking `mtx_dongles`: logging happens under that same
-lock so the message is serialised, and a `pthread_cond_broadcast` wakes every
-coder sleeping on the condition variable.
+The monitor scan and the state change happen under one `mtx_dongles` critical
+section. `check_simulation_state` takes the lock, calls `scan_coders_locked`,
+and, depending on the result, logs the burnout or marks success before a single
+`pthread_cond_broadcast`. `scan_coders_locked` assumes the lock is already held.
+Status reads outside the monitor go through `simulation_is_running`, which takes
+and releases `mtx_dongles`; `block_dongles` and `wait_for_dongles` keep direct
+reads because they already hold that mutex.
 
 The burnout message must be printed within 10 ms of the real burnout moment,
 which bounds how often the monitor may poll. The loop samples on a fixed
@@ -819,16 +822,18 @@ Initialisation and destruction live in `sync.c`. Initialisation reports which
 primitive failed, and destruction only destroys what was successfully created,
 using a count of created primitives.
 
-The pending design decision is which mutex protects the per-coder counters
-`number_of_compiles_done` and `last_compilation`. Reusing `mtx_dongles` adds
-no primitives but makes the monitor contend with acquisition. A dedicated
-mutex reduces contention but introduces a lock ordering that must be proved.
+Since 4.7a, `mtx_dongles` also protects `number_of_compiles_done`,
+`last_compilation` and `simulation_status`. A coder updates `last_compilation`
+inside `block_dongles` while the lock is held, the monitor scans the same fields
+under the lock in `check_simulation_state`, and status reads outside the monitor
+use `simulation_is_running`. This avoids a second mutex and a second lock order;
+the monitor contends only once every 5 ms.
 
-Mutexes will protect:
+Mutexes protect:
 
 - Dongle ownership.
 - Dongle cooldown timestamps.
-- Coder state.
+- Coder state (`number_of_compiles_done`, `last_compilation`).
 - Simulation status.
 - Output logging.
 - Scheduler queues.
@@ -1073,13 +1078,49 @@ Important constraints include:
   N=4.
 
 The scheduler is fully integrated into the acquisition path. Remaining Hito 4
-work is the full stress/fairness matrix (4.6) and the race/cleanup review (4.7).
+work is the full stress/fairness matrix (4.6) and thread-creation cleanup (4.7b).
+
+### Concurrency hardening (4.7a, 2026-10-30)
+
+- `last_compilation` is written in `block_dongles` while `mtx_dongles` is held,
+  so dongle acquisition and the start-of-compilation timestamp are atomic.
+- `check_simulation_state` locks `mtx_dongles` once and calls
+  `scan_coders_locked`; burnout and success updates happen under that same lock.
+- `simulation_is_running` (`sync.c`) reads `simulation_status` under
+  `mtx_dongles`. It is used by `coder_routine`, `compiling_phase` and
+  `monitor_routine`; it must not be called while the caller already holds the
+  mutex, which is why `block_dongles` and `wait_for_dongles` keep direct reads.
+- ThreadSanitizer on 2026-10-30 reports 0 data races for
+  `./codexion 3 2000 50 20 20 2 1 fifo`. The full stress matrix and Helgrind are
+  still pending under 4.6 and 7.6.
+
+### Resolved concurrency issues (4.7a)
+
+ThreadSanitizer originally reported three data races. They did not fail the
+smoke tests, but they were undefined behaviour and could produce a false burnout
+under output backpressure. All three are fixed:
+
+1. `last_compilation`: the write moved into `block_dongles` under
+   `mtx_dongles`, and the monitor reads it under the same lock.
+2. `number_of_compiles_done`: the monitor reads it under `mtx_dongles`.
+3. `simulation_status`: the monitor writes it under `mtx_dongles`, and coder
+   reads go through `simulation_is_running`.
+
+Reproduce the current check with:
+
+```bash
+cc -Wall -Wextra -Werror -pthread -fsanitize=thread -g coders/*.c \
+  -o /tmp/codexion_tsan
+/tmp/codexion_tsan 3 2000 50 20 20 2 1 fifo
+```
+
+Expected result: no `WARNING: ThreadSanitizer` lines.
 
 ### Still to implement
 
-- Full error cleanup for thread creation.
-- Mutex protection for the monitor's reads of coder state and
-  `simulation_status`.
+- Full error cleanup for thread creation (4.7b).
+- Full stress/fairness matrix (4.6) and TSan/Helgrind across that matrix.
+- Valgrind on thread-creation error paths (4.7b).
 
 ### Open items
 

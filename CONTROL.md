@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 6 **CERRADO**; Hito 4.5 **CERRADO**; Hito 4.6/4.7 pendientes; Hitos 5, 7 y 8 pendientes)
+## Estado actual (Hito 6 **CERRADO**; Hito 4.5 **CERRADO**; Hito 4.7a **CERRADO**; Hitos 4.6, 4.7b, 5, 7 y 8 pendientes)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -582,9 +582,32 @@ avanzar.
   - **Parcial (2026-10-30):** smoke N=1..5 FIFO/EDF, cooldown 300, 5 runs de
     N=5 y comprobación de "dos taken por compiling". Falta la matriz completa y
     el parser de solapamientos.
+- [x] **4.7a — Races de estado. CERRADO (2026-10-30).** `last_compilation` se
+  escribe en `block_dongles` bajo `mtx_dongles`; `check_simulation_state` hace
+  el escaneo y la transición de estado bajo un solo lock; las lecturas de
+  `simulation_status` fuera del monitor pasan por `simulation_is_running`
+  (`sync.c`). TSan: 3 races → 0 en `N=3`, FIFO.
+- [ ] **4.7b — Cleanup de `pthread_create`.** Comprobar el resultado del monitor,
+  no crear monitor si falla un coder, parar y unir los hilos creados, y no
+  hacer `join` de un monitor que no existe.
 - [ ] **4.7 — Cierre.** Norminette, valgrind (éxito, burnout y rutas de error),
-  helgrind/TSan si el entorno lo permite y cleanup completo de
+  helgrind/TSan sobre la matriz completa de estrés y cleanup completo de
   `pthread_create` (incluido el monitor).
+
+### Hallazgos del 4.7a (para defensa)
+
+- **La escritura de `last_compilation` va al adquirir, no después de los logs.**
+  Si `stdout` se bloquea, el monitor puede ver los dongles ocupados con una
+  fecha vieja y declarar un burnout falso.
+- **El lock debe cubrir lectura y escritura.** Mover solo la escritura bajo
+  `mtx_dongles` no elimina la race si el lector sigue leyendo sin el lock.
+- **`scan_coders_locked` asume el lock cogido.** El llamante
+  (`check_simulation_state`) lo coge una sola vez; el helper no vuelve a cogerlo.
+- **`simulation_is_running` no se puede llamar con `mtx_dongles` cogido.**
+  `block_dongles` y `wait_for_dongles` siguen leyendo el estado directamente
+  porque ya están dentro del lock.
+- **Un solo `broadcast` por transición.** Se hace después de decidir burnout o
+  éxito, no dentro del bucle de escaneo.
 
 ### Hallazgos del 4.5 (para defensa)
 
@@ -644,8 +667,8 @@ avanzar.
 - [x] **6.1** Hilo monitor (`pthread_create` en `run_simulation`): bucle mientras `SIM_RUNNING`. **HECHO.** `pthread_t monitor_pthread` en `t_control`; `monitor_routine` en `simulation.c`; `run_simulation` crea el monitor tras los coders y lo une al final.
 - [x] **6.4** Detección de éxito: todos los coders con `number_of_compiles_done == required` → `SIM_FINISHED`, el monitor sale. **HECHO.** Contador `finish_coders` **reiniciado en cada vuelta** del bucle exterior (bug: si no, se inflaba y paraba a un coder a medias); comparación `== required`. Verificado 8/8 runs con `2/2/2` compiles y `exit=0`.
 - [x] **6.2** Detección de burnout: para cada coder, `current_time() - last_compilation > time_to_burnout`. **HECHO.** Origen del cronómetro: `last_compilation` se inicializa a `control->start_time` en `coder_args` (de ahí mover `start_time` en `main.c` a **después** de `check_args` y **antes** de `init_coders`). El monitor recorre los coders y para con el **primer** quemado. **Pendiente:** el monitor no hace `usleep` → gira al 100% mientras `RUNNING`; falta el muestreo ≤5 ms (6.8).
-- [x] **6.3** Al detectar burnout: log `burned out` (bajo `mtx_log` vía `log_line`), fijar `SIM_STOPPED`, `broadcast` a `cond_dongles`. **HECHO** con helper `stop_simulation(control, coder_id)` en `simulation.c`: coge `mtx_dongles`, loguea, fija `SIM_STOPPED`, broadcast, suelta. El monitor sale con `break` tras el primer burnout (decisión: una sola parada).
-- [x] **6.5** Todas las esperas comprueban `simulation_status`. **HECHO.** `block_dongles`: el `while` espera solo mientras `dongles no disponibles && status == SIM_RUNNING`; el `put_dongles_blocked` va bajo `if (status == SIM_RUNNING)` (si salió por parada, no marca dongles). `compiling_phase`: tras `block_dongles`, `if (status != SIM_RUNNING) return;` (no loguea ni compila si se abortó). `coder_routine`: tras `compiling_phase`, solo entra a debug/refactor `if (status == SIM_RUNNING)` (evita las fases "fantasma" tras un abort).
+- [x] **6.3** Al detectar burnout: log `burned out` (bajo `mtx_log` vía `log_line`), fijar `SIM_STOPPED`, `broadcast` a `cond_dongles`. **HECHO y reforzado en 4.7a.** `check_simulation_state` coge `mtx_dongles`, llama a `scan_coders_locked`, loguea el coder quemado, fija `SIM_STOPPED` y hace un solo `broadcast` antes de soltar. El éxito (`SIM_FINISHED`) sigue el mismo camino bajo el mismo lock. El monitor sale tras la primera transición.
+- [x] **6.5** Todas las esperas comprueban `simulation_status`. **HECHO.** `block_dongles`: el `while` espera solo mientras `dongles no disponibles && status == SIM_RUNNING`; el `put_dongles_blocked` va bajo `if (status == SIM_RUNNING)` (si salió por parada, no marca dongles). `compiling_phase` y `coder_routine` leen el estado con `simulation_is_running` (toma `mtx_dongles`); `block_dongles`/`wait_for_dongles` lo leen directamente porque ya tienen el lock. `monitor_routine` también usa el helper.
 - [x] **6.6** El caso `1 coder` termina por burnout. **HECHO.** `./codexion 1 10 10 10 10 2 10 edf` → `11 1 burned out` y `exit=0`, sin `^C`.
 - [x] **6.7** `pthread_join` del monitor + de todos los coders + `destroy_sync` + `free_control`. **HECHO.** `run_simulation` crea el monitor tras los coders, joina todos los coders y luego el monitor; `main.c` destruye sync y libera después.
 - [x] **6.8** Test de precisión. **HECHO.** Con muestreo de 5 ms: `./codexion 1 200 50 50 50 1 10 edf` → `205 1 burned out` (error 5 ms < 10 ms). El error es a lo sumo el intervalo de muestreo.
@@ -671,6 +694,8 @@ avanzar.
 - [ ] **7.4** Suite de estrés (script en `tests/`, no entregable pero recomendado por el subject): matrices de N × tiempos × cooldown × fifo/edf; detectar hangs con timeout.
 - [ ] **7.5** Valgrind completo en 5+ configuraciones; cero leaks y cero invalid reads.
 - [ ] **7.6** TSan (dev) en las mismas configuraciones; cero data races.
+  **Parcial (2026-10-30):** 0 races en `N=3` FIFO tras 4.7a; falta la matriz
+  completa.
 - [ ] **7.7** Revisar que nunca se hace `usleep`/`printf` largo con un mutex distinto al de log held (contestar la pregunta en la defensa).
 - [ ] **7.8** Preparar respuestas de defensa: ¿cómo se evita el deadlock (adquisición atómica)? ¿por qué heap? ¿por qué el monitor cumple 10 ms? ¿dónde está el arbitraje EDF?
 
@@ -702,13 +727,14 @@ avanzar.
 
 ---
 
-## Próximo paso: **Hito 4.6/4.7 — estrés, races y cleanup**
+## Próximo paso: **Hito 4.6/4.7b — estrés y cleanup**
 
 Hito 1 cerrado. Hito 2 **cerrado** (2.0–2.9). Hito 3 **cerrado** (3.1–3.8). Hito
 6 **cerrado** (monitor: burnout + éxito + precisión + valgrind). Hito 4.5
-**cerrado** (heap integrado y verificado). Quedan **4.6** (matriz de estrés y
-justicia), **4.7** (helgrind/TSan y cleanup de `pthread_create`), **5**
-(validación EDF), **7** (errores/estrés) y **8** (entrega).
+**cerrado** (heap integrado y verificado). Hito **4.7a cerrado** (races de
+estado, TSan 0 en smoke). Quedan **4.6** (matriz de estrés y justicia), **4.7b**
+(cleanup de `pthread_create`), **5** (validación EDF), **7** (errores/estrés) y
+**8** (entrega).
 
 ### Hallazgos del Hito 6 (para defensa)
 

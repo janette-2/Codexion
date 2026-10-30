@@ -60,3 +60,13 @@ int	init_sync(t_control *control)
 	created++;
 	return (0);
 }
+
+int	simulation_is_running(t_control *control)
+{
+	int	running;
+
+	pthread_mutex_lock(&control->mtx_dongles);
+	running = (control->simulation_status == SIM_RUNNING);
+	pthread_mutex_unlock(&(control->mtx_dongles));
+	return (running);
+}
