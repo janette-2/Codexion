@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 6 **CERRADO**; Hito 4 en progreso: cola, ciclo de vida, predicado y desempate EDF cerrados; heap pendiente)
+## Estado actual (Hito 6 **CERRADO**; Hito 4.5 **CERRADO**; Hito 4.6/4.7 pendientes; Hitos 5, 7 y 8 pendientes)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -419,16 +419,18 @@ Consecuencia obligatoria: la adquisicion (`wait_for_dongles`) comprueba "soy el
 elegido" dentro del `while` (cerrado en 4.3). Sin esa comprobacion gana el primer
 hilo que despierte y el scheduler no arbitra nada.
 
-**Deuda de estructura:** el subject pide una cola de prioridad (heap).
-`choose_next_in_queue` hoy es un recorrido lineal sobre el array dinamico; el
-heap real es el micro-objetivo **4.5**, no el 4.1. Primero se cierra la semantica
-(4.2-4.4) y despues se cambia la estructura sin tocar la adquisicion.
+**Estructura (cerrada en 4.5):** el subject pide una cola de prioridad (heap).
+`scheduler_queue.items` es un min-heap binario; `heap_pos` permite retirar en
+`O(log n)`. La semantica work-conserving se conserva con extraccion perezosa:
+`drain_unserviceable` mueve las raices no servibles a `deferred`,
+`choose_next_in_queue` captura la raiz servible y `restore_deferred` reinserta
+todo antes de devolver.
 
-**Estado (2026-10-28):** la cola es unica (`scheduler_queue`), el ciclo de vida
-esta cerrado (`dequeue_coder` + reset de `waiting`), la adquisicion exige ser el
-elegido (`wait_for_dongles`) y EDF desempata por ticket. Build verde, Norminette
-11/11 y valgrind limpio. Sigue pendiente: sustituir el escaneo lineal por un
-heap.
+**Estado (2026-10-30):** la cola es unica (`scheduler_queue`) y ya es un heap, el
+ciclo de vida esta cerrado (`heap_remove` + reset de `waiting`), la adquisicion
+exige ser el elegido (`wait_for_dongles`) y EDF desempata por ticket. Build
+verde, Norminette 13/13, Valgrind limpio y gdb confirma el orden FIFO. Quedan
+4.6 (matriz de estres) y 4.7 (races/cleanup).
 
 ### Notas de estudio (2026-10-28): predicado, broadcast y espera
 
@@ -518,7 +520,7 @@ avanzar.
 - gdb (N=4, FIFO): tickets 0 y 2 adquieren en paralelo (pares disjuntos);
   despues 1 y 3. gdb (N=3, FIFO, todos los pares se solapan): la secuencia de
   adquisicion es 0,1,2,...,8, luego FIFO se respeta.
-- Pendiente: heap (4.5).
+- El heap real se integro despues, en **4.5 (2026-10-30)**.
 
 ### Micro-objetivos
 
@@ -565,17 +567,41 @@ avanzar.
     gana 3 en ambos órdenes; tres deadlines iguales con tickets 5,1,3 gana 1;
     un deadline menor gana aunque el ticket sea mayor; FIFO sigue intacto.
     Build y Norminette verdes; smoke FIFO/EDF y valgrind sin errores.
-- [ ] **4.5 — Heap de prioridad real.** Sustituir el array plano y el escaneo
-  lineal por un min-heap (ticket en FIFO; deadline + ticket en EDF). Definir la
-  política cuando el mínimo tiene el par bloqueado o en cooldown (por ejemplo,
-  sacar temporalmente los no servibles y reinsertarlos). API: init, push,
-  remove, peek/elect y destroy; mismas garantías e invariantes que 4.3.
+- [x] **4.5 — Heap de prioridad real. CERRADO (2026-10-30).** `scheduler_queue`
+  es un min-heap binario con `heap_pos` para retirada en `O(log n)`. La política
+  para el mínimo no servible es extracción perezosa: `drain_unserviceable` lo
+  mueve a `deferred`, se captura la raíz servible y `restore_deferred` reinserta
+  todo antes de devolver. `enqueue_coder`/`dequeue_coder` delegan en
+  `heap_push`/`heap_remove`.
+  - **Cierre:** `make re` verde, Norminette 13/13, N=1..5 FIFO/EDF, cooldown
+    1/300, 5 runs de N=5, Valgrind sin fugas ni errores. gdb: N=3 tickets
+    `0..8` en orden; N=4 `0+2` en paralelo y luego `1+3`.
 - [ ] **4.6 — Estrés y justicia.** FIFO y EDF con N = 1, 2, 3, 4, cooldown
   mínimo (1) y alto, `compiles = 1`, varias decenas de runs. Parser de logs para detectar
   solapamientos de compilación con dongles compartidos y comprobar el orden.
+  - **Parcial (2026-10-30):** smoke N=1..5 FIFO/EDF, cooldown 300, 5 runs de
+    N=5 y comprobación de "dos taken por compiling". Falta la matriz completa y
+    el parser de solapamientos.
 - [ ] **4.7 — Cierre.** Norminette, valgrind (éxito, burnout y rutas de error),
   helgrind/TSan si el entorno lo permite y cleanup completo de
   `pthread_create` (incluido el monitor).
+
+### Hallazgos del 4.5 (para defensa)
+
+- **El heap ordena por clave, no por servibilidad.** El mínimo global puede
+  tener el par bloqueado o enfriando. Por eso no basta con `heap_peek`.
+- **Extracción perezosa.** Se sacan solo las raíces no servibles que tapan a la
+  mejor servible; el resto del heap no se toca.
+- **El ganador no se saca en `choose`.** Se captura con `heap_peek` antes de
+  restaurar y sigue en el heap hasta que `block_dongles` lo retira.
+- **No re-mirar la raíz después de restaurar.** Al reinsertar un no servible con
+  mejor clave, ese coder puede volver a la raíz; el puntero capturado antes es
+  el elegido correcto.
+- **`heap_pos` es la invariante de pertenencia.** `push` lo asigna, `pop` y
+  `remove` lo devuelven a `-1`. Si se desincroniza, `heap_remove` borra en el
+  sitio equivocado o no borra.
+- **Restaurar siempre.** Si un camino de salida no reinserta los diferidos, esos
+  coders desaparecen de la cola y se quedan dormidos para siempre.
 
 ### Criterios de aceptación del Hito 4
 
@@ -676,11 +702,13 @@ avanzar.
 
 ---
 
-## Próximo paso: **Hito 4 — scheduler FIFO**
+## Próximo paso: **Hito 4.6/4.7 — estrés, races y cleanup**
 
 Hito 1 cerrado. Hito 2 **cerrado** (2.0–2.9). Hito 3 **cerrado** (3.1–3.8). Hito
-6 **cerrado** (monitor: burnout + éxito + precisión + valgrind). Quedan los
-Hitos **4–5** (colas heap FIFO/EDF), **7** (estrés/errores) y **8** (entrega).
+6 **cerrado** (monitor: burnout + éxito + precisión + valgrind). Hito 4.5
+**cerrado** (heap integrado y verificado). Quedan **4.6** (matriz de estrés y
+justicia), **4.7** (helgrind/TSan y cleanup de `pthread_create`), **5**
+(validación EDF), **7** (errores/estrés) y **8** (entrega).
 
 ### Hallazgos del Hito 6 (para defensa)
 

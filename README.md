@@ -117,6 +117,9 @@ coders/
 ├── resources.c
 ├── compiling.c
 ├── queue.c
+├── queue_aux.c
+├── heap_tools.c
+├── heap_tools_aux.c
 ├── simulation.c
 └── sync.c
 ```
@@ -202,42 +205,49 @@ Contains the resource-availability helpers:
   available, or `DEADLINE_NEVER` when no such instant exists yet.
 - `log_line`: the serialised log formatter.
 
-### `queue.c` and `queue_aux.c`
+### `queue.c`, `queue_aux.c`, `heap_tools.c` and `heap_tools_aux.c`
 
-Hold the single scheduler queue and the arbitration helpers:
+Hold the single scheduler heap and the arbitration helpers:
 
 - `init_waiting_queue` (`queue_aux.c`): allocates the only `t_coder *` array
-  (`scheduler_queue.items`, `number_of_coders` slots), then sets `size = 0` and
-  `capacity = number_of_coders`. A failed allocation leaves `items = NULL`,
-  `size = 0` and `capacity = 0`. The array is freed on every exit path.
+  (`scheduler_queue.items`, `number_of_coders` slots) and the temporary
+  `deferred` buffer of the same capacity. It sets `size = 0` and
+  `capacity = number_of_coders`. A failed allocation leaves the queue empty and
+  releases whatever was already reserved. Both arrays are freed on every exit
+  path.
 - `register_request`: assigns a monotonic `ticket` and marks the coder as
   `REQUEST_WAITING`. It runs under `mtx_dongles`, so the ticket order matches the
   order in which requests reached the critical section.
-- `enqueue_coder`: appends the coder once to `scheduler_queue`, using `size` as
-  the insertion index and respecting `capacity`. The duplicate check compares
-  coder pointers.
-- `dequeue_coder` (`queue_aux.c`): removes the coder by pointer using
-  swap-and-pop, clears the vacated slot and decrements `size`. It is a safe no-op
-  when the coder is absent and must be called with `mtx_dongles` held.
+- `enqueue_coder` delegates to `heap_push`; `dequeue_coder` (`queue_aux.c`)
+  delegates to `heap_remove`. The heap is the only owner of pending requests.
+- `heap_push`, `heap_pop`, `heap_peek` and `heap_remove`
+  (`heap_tools_aux.c`) maintain a binary min-heap. `heap_up` and `heap_down`
+  (`heap_tools.c`) restore the heap property after an insertion or removal.
+  `heap_pos` in `t_coder` records the position inside the heap, so removal is
+  `O(log n)` instead of a linear search.
 - `deadline`: returns the absolute burnout instant,
   `last_compilation + time_to_burnout`. It does **not** read the current clock;
   it is a date, not a remaining time.
 - `temp_beats_best`: the comparator. In `fifo` the smaller ticket wins; in `edf`
   the smaller deadline wins and equal deadlines are broken by the smaller
-  ticket. The ticket gives a total, reproducible order even after the queue
-  order changes through swap-and-pop removal.
-- `choose_next_in_queue`: the election. It scans `scheduler_queue`, ignores
-  coders that are not `REQUEST_WAITING`, keeps only those whose two dongles are
-  available (`dongles_available`), and returns the best one according to
-  `temp_beats_best`. It is called with `mtx_dongles` held.
+  ticket. The ticket gives a total, reproducible order.
+- `coder_electable` (`queue_aux.c`): a coder is electable when it is still
+  `REQUEST_WAITING` and both of its dongles are available.
+- `choose_next_in_queue`: the election. It calls `drain_unserviceable`, which
+  pops non-electable roots into the `deferred` buffer until the root is
+  electable (or the heap is empty). It captures that root with `heap_peek`,
+  restores every deferred coder with `heap_push`, and returns the captured
+  pointer. It is called with `mtx_dongles` held.
 
-The queue is the single owner of pending requests: `waiting_queue`,
-`waiting_count` and the mutable `next_in_queue` cursor were removed. The winner
-is recomputed on demand from the queue and the current dongle state, which avoids
-a stale cursor after a release, a cooldown expiry or a coder leaving the queue.
+The heap is ordered by `temp_beats_best`, but the election is **work-conserving**:
+a coder whose pair is blocked or cooling cannot stall a coder whose pair is
+free. The lazy `deferred` extraction removes only the non-electable roots that
+hide the best electable one; the winner is still inserted in the heap and is
+removed later by `dequeue_coder`.
 
-The queue is still a flat array with a linear scan; replacing the scan with a
-real binary heap is pending (the subject requires one).
+The winner is recomputed on demand from the heap and the current dongle state,
+which avoids a stale cursor after a release, a cooldown expiry or a coder
+leaving the queue.
 
 ### `sync.c`
 
@@ -707,24 +717,29 @@ so no other waiter can elect a coder that has already acquired or left.
 
 ### Heap requirement
 
-The subject requires a priority queue (heap) for scheduling. The current code
-uses a heap-allocated array plus a linear scan; replacing the scan with a heap
-is still pending. The array itself is already dynamic, as required.
+The subject requires a priority queue (heap) for scheduling. The code now uses
+a dynamically allocated binary min-heap (`scheduler_queue.items`) with the
+comparator selected by the scheduler. Removal uses the `heap_pos` index stored
+in each coder, so it is `O(log n)`; there is no linear scan in the election.
+
+Because a heap ordered only by ticket/deadline could leave a non-serviceable
+coder at the root, `choose_next_in_queue` performs a lazy extraction: the
+non-electable roots are moved to the `deferred` buffer, the first electable root
+is captured, and every deferred coder is pushed back before returning. This
+keeps the heap intact and preserves work-conserving behaviour.
 
 ### Integration status
 
 The acquisition path enforces the election: a coder only leaves
 `wait_for_dongles` when it is both available and elected. The request lifecycle
 is closed too: the winner marks its pair, broadcasts, removes itself from the
-queue and resets `waiting` under `mtx_dongles`, so its next round registers a
+heap and resets `waiting` under `mtx_dongles`, so its next round registers a
 fresh ticket.
 
-Remaining scheduler work:
-
-- Replace the linear scan with a real priority queue/heap (4.5).
-
-Verified with gdb: with N=3 (all pairs overlap) FIFO acquisitions follow tickets
-`0..8`; with N=4 disjoint pairs `0+2` run in parallel, then `1+3`.
+Verified with gdb on 2026-10-30: with N=3 (all pairs overlap) FIFO acquisitions
+follow tickets `0..8` in order; with N=4 disjoint pairs `0+2` run in parallel,
+then `1+3`. Smoke tests with N=1..5, FIFO/EDF and cooldown 1/300 complete, and
+Valgrind reports no leaks or errors.
 
 ---
 
@@ -745,10 +760,10 @@ the start of each real compilation, so every waiting coder has a comparable
 deadline.
 
 `temp_beats_best` compares deadlines (`<`) and breaks equal deadlines with the
-smaller ticket (`<`). This matters because the queue is not kept sorted:
-`dequeue_coder` uses swap-and-pop, so the physical order no longer matches the
-arrival order after a removal. The ticket is a unique, monotonically increasing
-key, so the election is deterministic for equal deadlines.
+smaller ticket (`<`). This matters because the heap is not sorted by arrival:
+after every push or removal the heap property is restored, so the physical order
+does not match the arrival order. The ticket is a unique, monotonically
+increasing key, so the election is deterministic for equal deadlines.
 
 The same election model as FIFO applies: a coder is only grantable if its two
 dongles are available, and the winner is recomputed on demand under
@@ -1020,16 +1035,11 @@ Important constraints include:
 - `init_waiting_queue` sets `size = 0` and `capacity = number_of_coders`; a
   failed allocation leaves the queue empty and releases nothing.
 - Monotonic ticket assignment via `register_request`.
-- `enqueue_coder` appends a coder once, using `size` as the index and respecting
-  `capacity`; the duplicate check compares pointers.
-- `dequeue_coder` removes the winner by pointer (swap-and-pop); `block_dongles`
-  resets `waiting` under `mtx_dongles`, including on the burnout exit path.
-  Verified with gdb: `size` drops by one and each new round gets a higher ticket.
+- `block_dongles` resets `waiting` under `mtx_dongles`, including on the burnout
+  exit path, so each new round registers a fresh ticket.
 - `deadline` returns `last_compilation + time_to_burnout`.
 - `temp_beats_best` implements the FIFO (ticket) and EDF (deadline + ticket)
   keys.
-- `choose_next_in_queue` ignores coders that are not `REQUEST_WAITING` and elects
-  the best coder whose pair is available.
 - `wait_for_dongles` keeps a coder asleep until it is both available and
   elected; the winner marks its pair, broadcasts and leaves the queue. It uses
   `cond_wait` for a past/never cooldown deadline and `timedwait` only for a real
@@ -1038,15 +1048,38 @@ Important constraints include:
   was green, `norminette` was 11/11 and Valgrind reported no leaks or errors on
   the smoke tests.
 
-The scheduler is integrated into the acquisition path. Pending:
+### Heap integration (2026-10-30)
 
-- Replace the linear scan with a real priority queue (heap), as the subject
-  requires.
+- `scheduler_queue.items` is now a binary min-heap. The comparator is
+  `temp_beats_best`: ticket in FIFO, deadline with ticket tie-break in EDF.
+- `heap_push`, `heap_pop`, `heap_peek` and `heap_remove` (`heap_tools_aux.c`)
+  plus `heap_up`/`heap_down` (`heap_tools.c`) maintain the heap property.
+- `t_coder.heap_pos` records the coder's index in the heap. `heap_push` sets it,
+  while `heap_pop` and `heap_remove` reset it to `-1`, so removal is
+  `O(log n)` and no linear search is needed.
+- `enqueue_coder` delegates to `heap_push`; `dequeue_coder` delegates to
+  `heap_remove`.
+- `coder_electable` combines the `REQUEST_WAITING` check with
+  `dongles_available`.
+- `drain_unserviceable` pops non-electable roots into the `deferred` buffer
+  until the root is electable or the heap is empty. `restore_deferred` pushes
+  every deferred coder back. This keeps work-conserving election with a heap.
+- `choose_next_in_queue` captures `heap_peek` before restoring the deferred
+  coders. It must not re-read the root after restoring, because a better-key
+  non-serviceable coder could return to the root.
+- Verified on 2026-10-30: `make re` green, `norminette` 13/13, N=1..5 with FIFO
+  and EDF, cooldown 1 and 300, five N=5 FIFO stress runs, Valgrind clean, and
+  gdb confirms FIFO tickets `0..8` for N=3 and disjoint `0+2` then `1+3` for
+  N=4.
+
+The scheduler is fully integrated into the acquisition path. Remaining Hito 4
+work is the full stress/fairness matrix (4.6) and the race/cleanup review (4.7).
 
 ### Still to implement
 
-- Heap-based priority queue (FIFO/EDF election and EDF tie-break are integrated).
 - Full error cleanup for thread creation.
+- Mutex protection for the monitor's reads of coder state and
+  `simulation_status`.
 
 ### Open items
 
@@ -1061,9 +1094,9 @@ The scheduler is integrated into the acquisition path. Pending:
   `SIM_FINISHED = 3`. `0` is deliberately not used for a live state, since `0` is
   what uninitialised memory holds. The monitor sets `SIM_FINISHED` on success and
   `SIM_STOPPED` on burnout.
-- The monitor loop currently polls without sleeping, so it uses 100 % CPU while
-  the simulation runs. Adding a short sleep (≤5 ms) is pending and is required
-  for the 10 ms burnout precision.
+- The monitor samples every 5 ms (`usleep(5000)`), so the burnout message can be
+  up to 5 ms late, inside the 10 ms window required by the subject. The monitor
+  sleeps at 0 % CPU between samples.
 
 ---
 

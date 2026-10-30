@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/29 22:10:25 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/30 18:40:41 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -142,6 +142,9 @@ long long	deadline(t_coder *coder);
 /* QUEUE_AUX.C */
 int			init_waiting_queue(t_control *control);
 void		dequeue_coder(t_coder *coder);
+int			coder_electable(t_coder *coder);
+int			drain_unserviceable(t_control *control);
+void		restore_deferred(t_control *control, int i);
 
 /* HEAP_TOOLS.C */
 int			heap_better(t_coder *a, t_coder *b, t_control *control);
