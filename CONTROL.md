@@ -740,9 +740,10 @@ cola on-demand; solo cambia la clave de comparación.
   y scheduler vacío. Todos imprimen error y salen con `exit=1`; ninguno cuelga.
 - [x] **7.2 CERRADO (2026-10-31).** Auditoría de liberación en orden inverso e
   inyección de `malloc` con `LD_PRELOAD` en los fallos 1–4 (cola, deferred,
-  coders, dongles): `exit=1` limpio, sin crash. `init_coders` e `init_dongles`
-  hacen `free(NULL)` redundante sobre el puntero ya comprobado; es inocuo y se
-  puede limpiar en el Hito 8.
+  coders, dongles): `exit=1` limpio, sin crash. La limpieza posterior eliminó
+  el `free(NULL)` redundante de `init_coders` e `init_dongles` (commit
+  `9ed63c9`); `make re` y Norminette 13/13 siguen verdes y los cuatro fallos de
+  `malloc` siguen saliendo con `exit=1`.
 - [x] **7.3 CERRADO.** Fallo de `pthread_create` con `FAIL_AT=1,2,5`: se unen
   solo los hilos creados, la simulación se para y no se hace `join` del monitor
   inexistente. Valgrind limpio y sin cuelgues.

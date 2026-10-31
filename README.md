@@ -1271,7 +1271,6 @@ Expected result: no `WARNING: ThreadSanitizer` lines.
 
 - Add a Helgrind suppression for the known glibc timed-wait `Dubious` warning.
   No data races were observed.
-- Remove the redundant `free(NULL)` calls in `init_coders` and `init_dongles`.
 
 ### Open items
 
