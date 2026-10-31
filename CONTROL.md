@@ -6,7 +6,7 @@
 
 ---
 
-## Estado actual (Hito 6 **CERRADO**; Hito 4.5 **CERRADO**; Hito 4.7a **CERRADO**; Hitos 4.6, 4.7b, 5, 7 y 8 pendientes)
+## Estado actual (Hitos 1–8 **CERRADOS**; listo para peer-evaluation)
 
 ### Hecho — cimientos (Hito 1)
 
@@ -678,18 +678,30 @@ avanzar.
 
 ### Micro-objetivos
 
-- [ ] **5.1** Extender la clave del heap con campo `deadline` (o comparator intercambiable según `scheduler`).
-- [ ] **5.2** Actualizar `last_compilation` (ya `long long`) en cada inicio de compilación real.
-- [ ] **5.3** Al elegir ganador, comparar deadlines; el heap devuelve el mínimo.
-- [ ] **5.4** Re-evaluación: si mientras esperas entra alguien con deadline más próximo, debe poder adelantar (el diseño de cola+re-eval al despertar lo permite; documentar cómo).
-- [ ] **5.5** Test de no-burnout: parámetros viables (p. ej. `5 600 100 50 50 3 20 edf`) — nadie debe imprimir `burned out`; la simulación termina por compiles completados.
-- [ ] **5.6** Comparativa fifo vs edf en README (sección decisiones): cuándo fifo puede agotar y edf no.
+- [x] **5.1 CERRADO (2026-10-31).** No hace falta un campo nuevo: `deadline()`
+  calcula `last_compilation + time_to_burnout`, y `temp_beats_best` elige el
+  comparador según `scheduler`. El heap usa ese comparador.
+- [x] **5.2 CERRADO.** `last_compilation` se actualiza al inicio de cada
+  compilación real dentro de `block_dongles`, bajo `mtx_dongles`.
+- [x] **5.3 CERRADO.** En EDF el heap devuelve el mínimo por deadline; empate
+  por ticket menor.
+- [x] **5.4 CERRADO.** La elección se recalcula bajo `mtx_dongles` en cada
+  despertar; un coder que llega con deadline más próximo puede adelantar porque
+  no hay cursor ni orden congelado. Documentado en README.
+- [x] **5.5 CERRADO (2026-10-31).** `5 600 100 50 50 3 20 edf`, 20 ejecuciones:
+  `exit=0`, 15 compilaciones por run, 0 burnouts y 0 fallos. Valgrind limpio.
+- [x] **5.6 CERRADO (2026-10-31).** README incluye la comparativa: con FIFO y
+  un escenario apretado (`2 15 100 10 10 1 1 fifo`) hubo burnout en 10/10 runs
+  (p. ej. a 17 ms); EDF con parámetros viables no produjo ninguno.
 
 ### Criterios de aceptación del Hito 5
 
-- Con `edf` y escenarios viables: **0** burnouts en 20 ejecuciones.
-- Con `fifo` y un escenario deliberadamente apretado: burnout posible (comportamiento aceptado por el subject).
-- Sin fugas, `norminette` en verde.
+- [x] Con `edf` y escenario viable: **0** burnouts en 20 ejecuciones.
+- [x] Con `fifo` y escenario apretado: burnout posible (10/10 runs).
+- [x] Sin fugas (Valgrind limpio en ambos escenarios) y Norminette 13/13.
+
+**Cierre Hito 5:** EDF validado. El planificador usa el mismo heap y la misma
+cola on-demand; solo cambia la clave de comparación.
 
 ---
 
@@ -723,21 +735,39 @@ avanzar.
 
 ### Micro-objetivos
 
-- [ ] **7.1** Matriz de tests de argumentos: nº incorrecto, vacíos, negativos, `0`, no numéricos, overflow, scheduler raro. Todos deben imprimir error y salir con código ≠ 0.
-- [ ] **7.2** Fallos de `malloc`: simular/forzar (o al menos estructurar el código para que cada fallo libere lo previo en orden inverso). Revisar `init_coders` (hace `free` redundante sobre puntero ya comprobado NULL).
-- [ ] **7.3** Fallo de `pthread_create` a mitad: unir creados, parar simulación, destruir sync, free.
-- [ ] **7.4** Suite de estrés (script en `tests/`, no entregable pero recomendado por el subject): matrices de N × tiempos × cooldown × fifo/edf; detectar hangs con timeout.
-- [ ] **7.5** Valgrind completo en 5+ configuraciones; cero leaks y cero invalid reads.
-- [ ] **7.6** TSan (dev) en las mismas configuraciones; cero data races.
-  **Parcial (2026-10-30):** 0 races en `N=3` FIFO tras 4.7a; falta la matriz
-  completa.
-- [ ] **7.7** Revisar que nunca se hace `usleep`/`printf` largo con un mutex distinto al de log held (contestar la pregunta en la defensa).
-- [ ] **7.8** Preparar respuestas de defensa: ¿cómo se evita el deadlock (adquisición atómica)? ¿por qué heap? ¿por qué el monitor cumple 10 ms? ¿dónde está el arbitraje EDF?
+- [x] **7.1 CERRADO (2026-10-31).** Matriz de 10 casos: sin args, pocos,
+  demasiados, vacío, negativo, cero, no numérico, overflow, scheduler inválido
+  y scheduler vacío. Todos imprimen error y salen con `exit=1`; ninguno cuelga.
+- [x] **7.2 CERRADO (2026-10-31).** Auditoría de liberación en orden inverso e
+  inyección de `malloc` con `LD_PRELOAD` en los fallos 1–4 (cola, deferred,
+  coders, dongles): `exit=1` limpio, sin crash. `init_coders` e `init_dongles`
+  hacen `free(NULL)` redundante sobre el puntero ya comprobado; es inocuo y se
+  puede limpiar en el Hito 8.
+- [x] **7.3 CERRADO.** Fallo de `pthread_create` con `FAIL_AT=1,2,5`: se unen
+  solo los hilos creados, la simulación se para y no se hace `join` del monitor
+  inexistente. Valgrind limpio y sin cuelgues.
+- [x] **7.4 CERRADO.** Matriz de estrés del 4.6 (138 runs válidos) más 20 runs
+  EDF viables y 10 FIFO apretados de la validación 5.5. Sin hangs con `timeout`,
+  sin compilaciones perdidas y sin solapamientos con dongles compartidos.
+- [x] **7.5 CERRADO.** Valgrind limpio (0 leaks, 0 errores) en éxito, burnout,
+  N=1, errores de argumentos, fallos de `pthread_create` y escenarios EDF/FIFO
+  del Hito 5.
+- [x] **7.6 CERRADO.** TSan sobre la matriz de 18 runs (N=2..4, cooldown
+  1/30/300, FIFO/EDF): 0 data races. En este entorno requiere `setarch -R` o
+  build no-PIE.
+- [x] **7.7 CERRADO.** `usleep` y las fases largas van fuera de los mutex;
+  `printf` solo dentro de `mtx_log` (`log_line`). El monitor toma
+  `mtx_dongles` y luego `mtx_log` al loguear burnout, pero ningún camino toma
+  `mtx_log` y después `mtx_dongles`; no hay orden inverso.
+- [x] **7.8 CERRADO (2026-10-31).** README añade notas de defensa para deadlock
+  (adquisición atómica), heap, precisión del monitor y arbitraje EDF.
 
 ### Criterios de aceptación del Hito 7
 
-- Batería de ≥20 ejecuciones sin hang, sin crash, sin leak.
-- Todos los inputs inválidos rechazados con mensaje claro.
+- [x] Batería de ≥20 ejecuciones sin hang, sin crash, sin leak.
+- [x] Todos los inputs inválidos rechazados con mensaje claro.
+
+**Cierre Hito 7:** errores, estrés, sanitizers y notas de defensa cubiertos.
 
 ---
 
@@ -747,29 +777,40 @@ avanzar.
 
 ### Micro-objetivos
 
-- [ ] **8.1** README: primera línea en cursiva con los logins (ya está), secciones **Description**, **Instructions**, **Resources** (referencias + uso de IA especificando tareas/parts).
-- [ ] **8.2** README: sección **Blocking cases handled** (deadlock/Coffman, inanición, cooldown, precisión de burnout, serialización de logs).
-- [ ] **8.3** README: sección **Thread synchronization mechanisms** (mtx_dongles, mtx_log, cond_dongles, diseño del monitor, ejemplos concretos de race evitados).
-- [ ] **8.4** Actualizar este CONTROL.md y el "Current Implementation Status" del README al estado real final.
-- [ ] **8.5** `norminette` 100% en todos los `.c/.h` entregables; ningún archivo huérfano en `coders/`.
-- [ ] **8.6** `make re && make clean && make fclean` verificados; Makefile sin relink, con `NAME all clean fclean re`.
-- [ ] **8.7** Commit final y revisión de que solo está lo entregable (los tests no evalúan, pero se pueden dejar fuera del alcance de la Norma).
+- [x] **8.1 CERRADO (2026-10-31).** README con primera línea en cursiva y login
+  `janrodri`; secciones **Description**, **Instructions**, **Resources** con
+  referencias y declaración de uso de IA (tutoría, revisión, pruebas y
+  documentación; sin código final copiado literalmente).
+- [x] **8.2 CERRADO.** README incluye **Blocking cases handled**: deadlock y
+  condiciones de Coffman, inanición, cooldown, precisión de burnout y
+  serialización de logs.
+- [x] **8.3 CERRADO.** README incluye **Thread synchronization mechanisms**:
+  `mtx_dongles`, `mtx_log`, `cond_dongles`, diseño del monitor y estado
+  compartido protegido.
+- [x] **8.4 CERRADO.** `CONTROL.md` y **Current Implementation Status** del
+  README reflejan Hitos 1–7 cerrados y Hito 8 en cierre.
+- [x] **8.5 CERRADO.** Norminette 13/13 (12 `.c` + 1 `.h`); `coders/` sin
+  archivos huérfanos.
+- [x] **8.6 CERRADO.** `make re`, `make clean` y `make fclean` verificados;
+  segunda ejecución de `make` no relinkea.
+- [x] **8.7 CERRADO.** Commit final revisado: solo código y documentación
+  entregable; artefactos `.o` y binario fuera del commit.
 
 ### Criterios de aceptación del Hito 8
 
-- Un evaluador externo puede compilar, ejecutar y entender el proyecto solo con el README.
-- Repo limpio, Norma en verde, sin fugas.
+- [x] Un evaluador externo puede compilar, ejecutar y entender el proyecto solo
+  con el README.
+- [x] Repo limpio, Norma en verde y sin fugas.
 
 ---
 
-## Próximo paso: **Hito 4.6/4.7b — estrés y cleanup**
+## Estado final: **Hitos 1–8 cerrados**
 
-Hito 1 cerrado. Hito 2 **cerrado** (2.0–2.9). Hito 3 **cerrado** (3.1–3.8). Hito
-6 **cerrado** (monitor: burnout + éxito + precisión + valgrind). Hito 4.5
-**cerrado** (heap integrado y verificado). Hito **4.7a cerrado** (races de
-estado, TSan 0 en smoke). Quedan **4.6** (matriz de estrés y justicia), **4.7b**
-(cleanup de `pthread_create`), **5** (validación EDF), **7** (errores/estrés) y
-**8** (entrega).
+Todos los hitos están cerrados. El proyecto compila con
+`-Wall -Wextra -Werror -pthread`, pasa Norminette 13/13, no tiene fugas ni data
+races conocidas y el README cubre descripción, instrucciones, recursos, casos
+de bloqueo, mecanismos de sincronización y uso de IA. Listo para
+peer-evaluation y para el commit de entrega.
 
 ### Hallazgos del Hito 6 (para defensa)
 

@@ -1,4 +1,4 @@
-<i> This project has been created as part of the 42 curriculum by \<janrodri\> .</i>
+<i>This project has been created as part of the 42 curriculum by janrodri.</i>
 
 # Codexion
 
@@ -28,7 +28,31 @@ The project focuses on:
 
 ---
 
-## Compilation
+## Resources
+
+- `Codexion.md`: project subject and required behaviour.
+- `Norma - 42.pdf`: 42 Norm and style constraints.
+- POSIX man pages: `pthread_create(3)`, `pthread_join(3)`,
+  `pthread_mutex_init(3)`, `pthread_mutex_destroy(3)`, `pthread_cond_init(3)`,
+  `pthread_cond_broadcast(3)`, `pthread_cond_timedwait(3)`, `gettimeofday(2)`
+  and `usleep(3)`.
+- `CONTROL.md`: implementation log, verification evidence and defence notes.
+
+### Use of AI
+
+AI was used as a tutoring and review assistant: explaining concurrency concepts
+(mutexes, condition variables, heaps, EDF and monitor timing), helping design
+edge cases and stress tests, and reviewing code and documentation. The final
+implementation was written, integrated and validated by the author; no
+AI-generated code was copied verbatim into the final source.
+
+---
+
+## Instructions
+
+Build and run the project with the commands below.
+
+### Compilation
 
 The project is compiled using the following flags:
 
@@ -56,7 +80,7 @@ make fclean
 
 ---
 
-## Execution
+### Execution
 
 The program expects the following arguments:
 
@@ -769,6 +793,18 @@ The same election model as FIFO applies: a coder is only grantable if its two
 dongles are available, and the winner is recomputed on demand under
 `mtx_dongles`.
 
+### EDF validation (Hito 5, 2026-10-31)
+
+- Viable EDF scenario `5 600 100 50 50 3 20 edf`: 20 runs, 15 compilations per
+  run, `exit=0`, 0 burnouts and 0 failures.
+- Deliberately tight FIFO scenario `2 15 100 10 10 1 1 fifo`: 10 runs, burnout
+  in 10/10 (for example at 17 ms).
+- FIFO preserves arrival order, so a coder can wait behind older overlapping
+  requests until its deadline expires. EDF selects the closest deadline first;
+  with feasible parameters every coder finishes before burning out. EDF still
+  burns out if the workload itself is infeasible.
+- Valgrind is clean on both scenarios and Norminette reports 13/13 files OK.
+
 ---
 
 ## Monitor
@@ -817,7 +853,22 @@ which never starts compiling and can only terminate through burnout.
 
 ---
 
-## Synchronisation
+## Blocking cases handled
+
+- **Deadlock / Coffman conditions:** both dongles are acquired atomically under
+  `mtx_dongles`; no coder holds one dongle while waiting for the other, so
+  hold-and-wait and circular-wait cycles are removed.
+- **Starvation:** FIFO uses a monotonic ticket; EDF uses the closest deadline
+  with a ticket tie-break. Election is recomputed on every wake-up, and a coder
+  whose pair is busy cannot block a disjoint pair (work-conserving election).
+- **Cooldown:** `available_at` is protected by `mtx_dongles`; waiters use a
+  timed wait only for a real future cooldown and are woken by broadcast.
+- **Burnout precision:** the monitor samples every 5 ms and uses a strict `>`
+  comparison, so detection is at most one sample late (inside the 10 ms window).
+- **Log serialisation:** every complete log line is printed under `mtx_log`, so
+  messages from different threads cannot interleave.
+
+## Thread synchronization mechanisms
 
 The project uses mutexes and condition variables to protect shared state.
 
@@ -963,6 +1014,35 @@ If dongles are allocated after coders:
 
 If a later initialisation step fails, only resources that were successfully created should be destroyed.
 
+### Error and stress validation (Hito 7, 2026-10-31)
+
+- 10 invalid-argument cases (count, empty, negative, zero, non-numeric,
+  overflow, invalid/empty scheduler) print a clear error and exit with code 1.
+- `malloc` failure injection at the four allocation points (queue, deferred
+  buffer, coders, dongles) exits with code 1 without crashing.
+- `pthread_create` failure injection (`FAIL_AT=1,2,5`) stops the simulation,
+  joins only created coders and never joins a missing monitor.
+- Stress: 138 valid runs (4.6) plus 20 viable EDF and 10 tight FIFO runs
+  (Hito 5), all with timeouts and compilation-count checks.
+- Valgrind: 0 leaks and 0 errors across success, burnout, N=1, argument errors,
+  thread-creation failures and the EDF/FIFO scenarios.
+- TSan: 0 data races on the 18-run matrix. Helgrind: 0 data races, with the
+  documented timed-wait `Dubious` warning.
+
+### Defence notes
+
+- **Deadlock:** both dongles are acquired atomically under `mtx_dongles`; a coder
+  never holds one dongle while waiting for the other, so there is no
+  hold-and-wait cycle.
+- **Heap:** the subject requires a priority queue; the binary min-heap supports
+  `O(log n)` insertion/removal, and the deferred buffer preserves
+  work-conserving election when the root is not serviceable.
+- **10 ms burnout window:** the monitor is a separate thread sampling every
+  5 ms; with the strict `>` comparison, detection is at most one sample late.
+- **EDF arbitration:** `deadline()` computes `last_compilation +
+  time_to_burnout`; `temp_beats_best` picks the minimum deadline with a ticket
+  tie-break, and the winner is recomputed on every wake-up under `mtx_dongles`.
+
 ---
 
 ## Restrictions
@@ -983,6 +1063,9 @@ Important constraints include:
 ---
 
 ## Current Implementation Status
+
+All Hitos 1–8 are closed. The project is ready for peer evaluation; the items
+below are optional improvements only.
 
 ### Implemented
 
@@ -1184,12 +1267,11 @@ cc -Wall -Wextra -Werror -pthread -fsanitize=thread -g coders/*.c \
 
 Expected result: no `WARNING: ThreadSanitizer` lines.
 
-### Still to implement
+### Optional follow-ups
 
-- Optional: add a Helgrind suppression for the known glibc timed-wait
-  `Dubious` warning. No data races were observed.
-- Hito 5 documentation and no-burnout comparison.
-- Hito 8 final README, Norminette, build and packaging pass.
+- Add a Helgrind suppression for the known glibc timed-wait `Dubious` warning.
+  No data races were observed.
+- Remove the redundant `free(NULL)` calls in `init_coders` and `init_dongles`.
 
 ### Open items
 
