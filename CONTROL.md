@@ -587,6 +587,15 @@ avanzar.
   el escaneo y la transición de estado bajo un solo lock; las lecturas de
   `simulation_status` fuera del monitor pasan por `simulation_is_running`
   (`sync.c`). TSan: 3 races → 0 en `N=3`, FIFO.
+  - **Ajuste 2026-10-31 (precedencia éxito/burnout):** `scan_coders_locked`
+    cuenta primero los coders que ya alcanzaron
+    `number_of_compiles_required` y los salta con `continue`; solo los coders
+    no terminados se evalúan para burnout. Sin este orden, un coder que había
+    terminado su última compilación pero seguía en debug/refactor se marcaba
+    `burned out` porque su `last_compilation` ya era viejo.
+  - **Verificación:** `2 15 10 10 10 1 1 {fifo,edf}` termina sin `burned out`;
+    `2 15 100 10 10 1 1 edf` sigue detectando burnout real a los 16 ms; `N=1`
+    sigue terminando por burnout. Build y Norminette verdes.
 - [ ] **4.7b — Cleanup de `pthread_create`.** Comprobar el resultado del monitor,
   no crear monitor si falla un coder, parar y unir los hilos creados, y no
   hacer `join` de un monitor que no existe.

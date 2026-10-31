@@ -789,6 +789,13 @@ The monitor loop implements both outcomes:
   coder) it logs `X burned out`, sets `SIM_STOPPED` and returns. It stops at the
   first burnout it finds, logging a single `burned out` line.
 
+The scan gives success precedence per coder: a coder that already reached
+`number_of_compiles_required` is counted as finished and is **not** checked for
+burnout. Without that order, a coder that completed its last compile but was
+still in debug/refactor could be reported as `burned out` because its
+`last_compilation` was old. Burnout is still evaluated for every coder that has
+not completed its required compiles.
+
 The monitor scan and the state change happen under one `mtx_dongles` critical
 section. `check_simulation_state` takes the lock, calls `scan_coders_locked`,
 and, depending on the result, logs the burnout or marks success before a single
@@ -1086,6 +1093,11 @@ work is the full stress/fairness matrix (4.6) and thread-creation cleanup (4.7b)
   so dongle acquisition and the start-of-compilation timestamp are atomic.
 - `check_simulation_state` locks `mtx_dongles` once and calls
   `scan_coders_locked`; burnout and success updates happen under that same lock.
+- `scan_coders_locked` counts a coder as finished before evaluating burnout.
+  A coder that reached `number_of_compiles_required` is never reported as
+  `burned out` while it finishes debug/refactor. Verified on 2026-10-31 with
+  `2 15 10 10 10 1 1 {fifo,edf}` (no burnout) and
+  `2 15 100 10 10 1 1 edf` (real burnout at 16 ms).
 - `simulation_is_running` (`sync.c`) reads `simulation_status` under
   `mtx_dongles`. It is used by `coder_routine`, `compiling_phase` and
   `monitor_routine`; it must not be called while the caller already holds the

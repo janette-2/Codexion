@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/16 13:54:41 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/30 21:02:15 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/31 10:52:00 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -34,12 +34,16 @@ int	scan_coders_locked(t_control *control, int *finish_coders)
 	*finish_coders = 0;
 	while (i < control->number_of_coders)
 	{
+		if (control->coders[i].number_of_compiles_done
+			== control->number_of_compiles_required)
+		{
+			(*finish_coders)++;
+			i++;
+			continue ;
+		}
 		if (current_time() - (control->coders[i].last_compilation)
 			> control->time_to_burnout)
 			return (i);
-		if (control->coders[i].number_of_compiles_done
-			== control->number_of_compiles_required)
-			(*finish_coders)++;
 		i++;
 	}
 	return (-1);
