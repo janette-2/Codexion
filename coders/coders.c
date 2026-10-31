@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 16:24:55 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/31 20:43:10 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/31 20:56:36 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -62,7 +62,6 @@ int	init_coders(t_control *control)
 	control->coders = malloc(sizeof(t_coder) * control->number_of_coders);
 	if (!control->coders)
 	{
-		free(control->coders);
 		control->coders = NULL;
 		return (-1);
 	}
