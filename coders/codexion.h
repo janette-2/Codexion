@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/07 19:17:11 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/30 20:58:13 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/31 20:40:59 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -107,6 +107,8 @@ void		put_dongles_blocked(t_coder *coder);
 /* CODERS.C */
 void		coder_args(t_coder *coder, int i, t_control *control);
 int			init_coders(t_control *control);
+int			start_coders(t_control *control);
+void		stop_and_join(t_control *control, int created);
 int			run_simulation(t_control *control);
 
 /* SIMULATION.C */

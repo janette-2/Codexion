@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/14 16:24:55 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/29 19:34:49 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/10/31 20:43:10 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,6 +23,36 @@ void	coder_args(t_coder *coder, int i, t_control *control)
 	coder->ticket = -1;
 	coder->waiting = REQUEST_NOT_WAITING;
 	coder->heap_pos = -1;
+}
+
+int	start_coders(t_control *control)
+{
+	int	created;
+	int	result;
+
+	created = 0;
+	while (created < control->number_of_coders)
+	{
+		result = pthread_create(&control->coders[created].coder_pthread, NULL,
+				coder_routine, &control->coders[created]);
+		if (result != 0)
+			break ;
+		created++;
+	}
+	return (created);
+}
+
+void	stop_and_join(t_control *control, int created)
+{
+	int	i;
+
+	pthread_mutex_lock(&control->mtx_dongles);
+	control->simulation_status = SIM_STOPPED;
+	pthread_cond_broadcast(&control->cond_dongles);
+	pthread_mutex_unlock(&control->mtx_dongles);
+	i = 0;
+	while (i < created)
+		pthread_join(control->coders[i++].coder_pthread, NULL);
 }
 
 int	init_coders(t_control *control)
@@ -45,27 +75,28 @@ int	init_coders(t_control *control)
 	return (0);
 }
 
-// Nº of created threads == i;
 int	run_simulation(t_control *control)
 {
-	int	i;
+	int	created;
+	int	result_monitor;
 	int	j;
 
-	i = 0;
-	while (i < control->number_of_coders)
+	created = start_coders(control);
+	if (created != control->number_of_coders)
 	{
-		if (pthread_create(
-				&control->coders[i].coder_pthread, NULL,
-				coder_routine, &control->coders[i]) != 0)
-			break ;
-		i++;
+		stop_and_join(control, created);
+		return (1);
 	}
-	pthread_create(&control->monitor_pthread, NULL, monitor_routine, control);
+	result_monitor = pthread_create(&control->monitor_pthread,
+			NULL, monitor_routine, control);
+	if (result_monitor != 0)
+	{
+		stop_and_join(control, created);
+		return (1);
+	}
 	j = 0;
-	while (j < i)
+	while (j < created)
 		pthread_join(control->coders[j++].coder_pthread, NULL);
 	pthread_join(control->monitor_pthread, NULL);
-	if (i == control->number_of_coders)
-		return (0);
-	return (1);
+	return (0);
 }

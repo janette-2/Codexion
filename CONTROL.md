@@ -576,12 +576,24 @@ avanzar.
   - **Cierre:** `make re` verde, Norminette 13/13, N=1..5 FIFO/EDF, cooldown
     1/300, 5 runs de N=5, Valgrind sin fugas ni errores. gdb: N=3 tickets
     `0..8` en orden; N=4 `0+2` en paralelo y luego `1+3`.
-- [ ] **4.6 — Estrés y justicia.** FIFO y EDF con N = 1, 2, 3, 4, cooldown
-  mínimo (1) y alto, `compiles = 1`, varias decenas de runs. Parser de logs para detectar
-  solapamientos de compilación con dongles compartidos y comprobar el orden.
-  - **Parcial (2026-10-30):** smoke N=1..5 FIFO/EDF, cooldown 300, 5 runs de
-    N=5 y comprobación de "dos taken por compiling". Falta la matriz completa y
-    el parser de solapamientos.
+- [x] **4.6 — Estrés y justicia. CERRADO (2026-10-31).** Matriz FIFO/EDF con
+  N = 2, 3, 4, cooldown 1/30/300, `compiles = 1`, 5 runs por combinación
+  (90 ejecuciones): sin burnouts, sin cuelgues y con exactamente N compilaciones
+  por run. Matriz adicional FIFO/EDF con N = 2..5, cooldown 1/300,
+  `compiles = 2`, 3 runs por combinación (48 ejecuciones): idem, con 2N
+  compilaciones. N=1 con burnout esperado.
+  - **Parser de intervalos:** cada compilación va de `is compiling` al
+    `is debugging` siguiente; si el éxito corta la última fase, el fin se acota
+    con `start + time_to_compile`. Para cada par de intervalos solapados se
+    comprueba que sus conjuntos de dongles del ciclo (con etiquetas 0-based
+    equivalentes a las del código) son disjuntos. Resultado: 0 solapamientos
+    con dongles compartidos y 0 compilaciones perdidas en las 138 ejecuciones
+    válidas.
+  - **Orden:** el no-solapamiento y el reparto work-conserving se validan en
+    todos los runs; el orden FIFO por ticket sigue verificado con gdb
+    (`0..8` en N=3) y el desempate EDF con la prueba unitaria del comparador.
+  - **Nota:** el parser es temporal y vive fuera del repo; no afecta a la
+    entrega. `make re` y Norminette verdes tras la matriz.
 - [x] **4.7a — Races de estado. CERRADO (2026-10-30).** `last_compilation` se
   escribe en `block_dongles` bajo `mtx_dongles`; `check_simulation_state` hace
   el escaneo y la transición de estado bajo un solo lock; las lecturas de
@@ -596,12 +608,26 @@ avanzar.
   - **Verificación:** `2 15 10 10 10 1 1 {fifo,edf}` termina sin `burned out`;
     `2 15 100 10 10 1 1 edf` sigue detectando burnout real a los 16 ms; `N=1`
     sigue terminando por burnout. Build y Norminette verdes.
-- [ ] **4.7b — Cleanup de `pthread_create`.** Comprobar el resultado del monitor,
-  no crear monitor si falla un coder, parar y unir los hilos creados, y no
-  hacer `join` de un monitor que no existe.
-- [ ] **4.7 — Cierre.** Norminette, valgrind (éxito, burnout y rutas de error),
-  helgrind/TSan sobre la matriz completa de estrés y cleanup completo de
-  `pthread_create` (incluido el monitor).
+- [x] **4.7b — Cleanup de `pthread_create`. CERRADO (2026-10-31).**
+  `start_coders` devuelve cuántos coders se crearon. Si falla un coder, se
+  marca `SIM_STOPPED` bajo `mtx_dongles`, se hace broadcast, se unen solo los
+  coders creados y no se crea el monitor. Si falla el monitor, se para la
+  simulación, se unen todos los coders y no se hace `join` de un monitor
+  inexistente. En el camino normal se unen los coders y después el monitor.
+  - **Verificación:** inyección con `LD_PRELOAD` (`FAIL_AT=1,2,5`): `exit=1`
+    inmediato, sin cuelgues ni joins inválidos. Valgrind limpio en las tres
+    rutas; TSan 0 races en el camino normal; Norminette 13/13.
+- [x] **4.7 — Cierre. CERRADO (2026-10-31).** Norminette 13/13 y `make re`
+  verdes. Valgrind limpio en éxito, burnout real, N=1, errores de argumentos y
+  las tres rutas de fallo de `pthread_create` (`FAIL_AT=1,2,5`). TSan sobre la
+  matriz de 18 runs (N=2..4, cooldown 1/30/300, FIFO/EDF): 0 races; en este
+  entorno necesita `setarch -R` o build no-PIE. Helgrind sobre la misma matriz:
+  0 data races; emite un aviso `Helgrind:Dubious` en el timeout interno de
+  `pthread_cond_timedwait` en 3 de 18 configuraciones (N=3 cooldown 30,
+  FIFO/EDF; N=4 cooldown 300, FIFO), sin carrera de estado. Se documenta como
+  falso positivo conocido y queda la opción de añadir una supresión.
+  - **Cierre Hito 4:** 4.1–4.7 cerrados; planificador, heap, monitor y cleanup
+    de hilos verificados.
 
 ### Hallazgos del 4.7a (para defensa)
 

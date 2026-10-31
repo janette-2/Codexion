@@ -1034,8 +1034,13 @@ Important constraints include:
 - The two `has taken a dongle` logs, in subject order before `is compiling`.
 - Single-exit acquisition helper that cannot fail: it returns holding the pair.
 - Thread creation per coder, storing the pointer to the heap array element.
-- `pthread_create` result checked on return value (`!= 0`), stopping at the first failure.
-- Thread joining (`run_simulation` joins every thread that was created).
+- `start_coders` checks `pthread_create` (`!= 0`), stops at the first failure
+  and returns how many coder threads exist.
+- Partial coder creation: `stop_and_join` sets `SIM_STOPPED`, broadcasts on
+  `cond_dongles` and joins the created coders; the monitor is not created.
+- Monitor creation is checked separately: on failure, all coders are stopped and
+  joined, and the monitor is never joined because it does not exist.
+- Thread joining: normal path joins every coder first and then the monitor.
 - Joining before destroying synchronisation objects and freeing memory.
 - Monitor thread creation and joining, with success detection
   (`SIM_FINISHED`) when every coder completes its required compilations.
@@ -1084,8 +1089,40 @@ Important constraints include:
   gdb confirms FIFO tickets `0..8` for N=3 and disjoint `0+2` then `1+3` for
   N=4.
 
-The scheduler is fully integrated into the acquisition path. Remaining Hito 4
-work is the full stress/fairness matrix (4.6) and thread-creation cleanup (4.7b).
+The scheduler is fully integrated into the acquisition path. Hito 4 is closed
+(scheduler, heap, monitor, stress matrix, thread cleanup and final checks);
+next work is Hito 5 and the Hito 8 packaging pass.
+
+### Stress and fairness matrix (4.6, 2026-10-31)
+
+- FIFO/EDF, N=2,3,4, cooldown 1/30/300, `compiles=1`, 5 runs per combination
+  (90 runs): no burnout, no hang, exactly N compilations per run.
+- FIFO/EDF, N=2..5, cooldown 1/300, `compiles=2`, 3 runs per combination
+  (48 runs): no burnout, no hang, exactly 2N compilations per run.
+- N=1 still ends with the expected burnout.
+- A log-interval parser pairs each `is compiling` with the following
+  `is debugging` (or `start + time_to_compile` when success cuts the final
+  phase) and checks every overlapping pair for shared dongles in the circular
+  adjacency graph, using equivalent 0-based labels. Result: 0 shared-dongle
+  overlaps and 0 missing compilations in the 138 valid runs.
+- FIFO ticket order remains gdb-verified (`0..8` with N=3); EDF tie-breaking is
+  covered by the comparator unit test. The stress parser adds work-conserving
+  overlap and starvation checks. It is a temporary tool outside the repository.
+
+### Thread-creation cleanup (4.7b, 2026-10-31)
+
+- `start_coders` creates coder threads and returns how many exist. On a
+  `pthread_create` failure it stops the loop immediately.
+- If a coder creation fails, `stop_and_join` sets `SIM_STOPPED` under
+  `mtx_dongles`, broadcasts on `cond_dongles`, joins the created coders and the
+  monitor is not created.
+- If monitor creation fails, the same helper stops the simulation and joins all
+  coders. The monitor is not joined because it was never created.
+- The success path joins all coders first and then the monitor.
+- Failure injection with an `LD_PRELOAD` wrapper (`FAIL_AT=1,2,5`) returns
+  `exit=1` immediately with no hang. Valgrind is clean on the three error paths;
+  TSan reports 0 races on the normal path; Norminette passes. The injection
+  harness is outside the repository.
 
 ### Concurrency hardening (4.7a, 2026-10-30)
 
@@ -1102,9 +1139,28 @@ work is the full stress/fairness matrix (4.6) and thread-creation cleanup (4.7b)
   `mtx_dongles`. It is used by `coder_routine`, `compiling_phase` and
   `monitor_routine`; it must not be called while the caller already holds the
   mutex, which is why `block_dongles` and `wait_for_dongles` keep direct reads.
-- ThreadSanitizer on 2026-10-30 reports 0 data races for
-  `./codexion 3 2000 50 20 20 2 1 fifo`. The full stress matrix and Helgrind are
-  still pending under 4.6 and 7.6.
+- ThreadSanitizer on 2026-10-31 reports 0 data races on the 18-run matrix
+  (N=2..4, cooldown 1/30/300, FIFO/EDF). In this environment TSan needs
+  `setarch -R` or a non-PIE build to avoid an unexpected-memory-mapping startup
+  failure.
+- Helgrind on the same 18-run matrix reports 0 data races. It emits one
+  `Helgrind:Dubious` warning when a `pthread_cond_timedwait` cooldown timeout
+  fires in 3 of 18 configurations (N=3 cooldown 30 FIFO/EDF; N=4 cooldown 300
+  FIFO), with the stack inside glibc's timed wait. There is no shared-state
+  race; this is treated as a known timed-wait false positive and can be
+  suppressed if needed.
+
+### Final Hito 4 verification (4.7, 2026-10-31)
+
+- `make re` green and Norminette reports 13/13 files OK.
+- Valgrind clean (no leaks, no errors) on: successful N=4 run, real burnout
+  (`2 15 100 10 10 1 1 edf`), N=1 burnout, argument-error exits, and the three
+  `pthread_create` failure paths (`FAIL_AT=1,2,5`).
+- TSan: 0 data races on the 18-run stress matrix.
+- Helgrind: 0 data races; known `pthread_cond_timedwait` timeout `Dubious`
+  warning documented above.
+- Stress/fairness: 138 valid runs with 0 shared-dongle overlaps and 0 missing
+  compilations.
 
 ### Resolved concurrency issues (4.7a)
 
@@ -1130,9 +1186,10 @@ Expected result: no `WARNING: ThreadSanitizer` lines.
 
 ### Still to implement
 
-- Full error cleanup for thread creation (4.7b).
-- Full stress/fairness matrix (4.6) and TSan/Helgrind across that matrix.
-- Valgrind on thread-creation error paths (4.7b).
+- Optional: add a Helgrind suppression for the known glibc timed-wait
+  `Dubious` warning. No data races were observed.
+- Hito 5 documentation and no-burnout comparison.
+- Hito 8 final README, Norminette, build and packaging pass.
 
 ### Open items
 
