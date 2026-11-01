@@ -622,10 +622,11 @@ avanzar.
   las tres rutas de fallo de `pthread_create` (`FAIL_AT=1,2,5`). TSan sobre la
   matriz de 18 runs (N=2..4, cooldown 1/30/300, FIFO/EDF): 0 races; en este
   entorno necesita `setarch -R` o build no-PIE. Helgrind sobre la misma matriz:
-  0 data races; emite un aviso `Helgrind:Dubious` en el timeout interno de
-  `pthread_cond_timedwait` en 3 de 18 configuraciones (N=3 cooldown 30,
-  FIFO/EDF; N=4 cooldown 300, FIFO), sin carrera de estado. Se documenta como
-  falso positivo conocido y queda la opción de añadir una supresión.
+  0 data races; emite de forma intermitente un aviso `Helgrind:Dubious` cuando
+  vence un `pthread_cond_timedwait` de cooldown (observado, por ejemplo, en N=4
+  cooldown 30 FIFO; antes también en N=3 cooldown 30 y N=4 cooldown 300), sin
+  carrera de estado. Se documenta como falso positivo conocido y queda la opción
+  de añadir una supresión.
   - **Cierre Hito 4:** 4.1–4.7 cerrados; planificador, heap, monitor y cleanup
     de hilos verificados.
 

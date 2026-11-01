@@ -1226,12 +1226,12 @@ next work is Hito 5 and the Hito 8 packaging pass.
   (N=2..4, cooldown 1/30/300, FIFO/EDF). In this environment TSan needs
   `setarch -R` or a non-PIE build to avoid an unexpected-memory-mapping startup
   failure.
-- Helgrind on the same 18-run matrix reports 0 data races. It emits one
-  `Helgrind:Dubious` warning when a `pthread_cond_timedwait` cooldown timeout
-  fires in 3 of 18 configurations (N=3 cooldown 30 FIFO/EDF; N=4 cooldown 300
-  FIFO), with the stack inside glibc's timed wait. There is no shared-state
-  race; this is treated as a known timed-wait false positive and can be
-  suppressed if needed.
+- Helgrind on the same 18-run matrix reports 0 data races. It intermittently
+  emits one `Helgrind:Dubious` warning when a `pthread_cond_timedwait` cooldown
+  timeout fires (observed, for example, in N=4 cooldown 30 FIFO; earlier runs
+  also showed N=3 cooldown 30 and N=4 cooldown 300), with the stack inside
+  glibc's timed wait. There is no shared-state race; this is treated as a known
+  timed-wait false positive and can be suppressed if needed.
 
 ### Final Hito 4 verification (4.7, 2026-10-31)
 

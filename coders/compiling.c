@@ -6,7 +6,7 @@
 /*   By: janrodri <janrodri@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/11 20:39:17 by janrodri          #+#    #+#             */
-/*   Updated: 2026/10/30 21:00:51 by janrodri         ###   ########.fr       */
+/*   Updated: 2026/11/02 00:18:14 by janrodri         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,7 +37,7 @@ void	compiling_phase(t_coder *coder)
 	log_line(coder->control, LOG_TAKEN, coder->id);
 	log_line(coder->control, LOG_TAKEN, coder->id);
 	log_line(coder->control, LOG_COMPILING, coder->id);
-	usleep(coder->control->time_to_compile * 1000);
+	usleep((long long)coder->control->time_to_compile * 1000);
 	pthread_mutex_lock(&coder->control->mtx_dongles);
 	coder->number_of_compiles_done++;
 	coder->control->dongles[
@@ -55,13 +55,13 @@ void	compiling_phase(t_coder *coder)
 void	debugging_phase(t_coder *coder)
 {
 	log_line(coder->control, LOG_DEBUGGING, coder->id);
-	usleep(coder->control->time_to_debug * 1000);
+	usleep((long long)coder->control->time_to_debug * 1000);
 }
 
 void	refactoring_phase(t_coder *coder)
 {
 	log_line(coder->control, LOG_REFACTORING, coder->id);
-	usleep(coder->control->time_to_refactor * 1000);
+	usleep((long long)coder->control->time_to_refactor * 1000);
 }
 
 void	*coder_routine(void *arg)
