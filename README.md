@@ -1,4 +1,4 @@
-<i>This project has been created as part of the 42 curriculum by janrodri.</i>
+<i>This project has been created as part of the 42 curriculum by \<janrodri>.</i>
 
 # Codexion
 
@@ -25,6 +25,14 @@ The project focuses on:
 - FIFO and EDF scheduling.
 - Precise time management.
 - Safe termination and cleanup.
+
+## Required sections — quick map
+
+- [Description](#description)
+- [Instructions](#instructions)
+- [Resources and Use of AI](#resources)
+- [Blocking cases handled](#blocking-cases-handled)
+- [Thread synchronization mechanisms](#thread-synchronization-mechanisms)
 
 ---
 
@@ -54,7 +62,7 @@ Build and run the project with the commands below.
 
 ### Compilation
 
-The project is compiled using the following flags:
+The project is compiled using the following flags (specified in the FLAGS variable in the Makefile):
 
 ```bash
 -Wall -Wextra -Werror -pthread
@@ -82,7 +90,7 @@ make fclean
 
 ### Execution
 
-The program expects the following arguments:
+The program expects the following 8 arguments:
 
 ```text
 ./codexion number_of_coders \
@@ -855,63 +863,67 @@ which never starts compiling and can only terminate through burnout.
 
 ## Blocking cases handled
 
-- **Deadlock / Coffman conditions:** both dongles are acquired atomically under
-  `mtx_dongles`; no coder holds one dongle while waiting for the other, so
-  hold-and-wait and circular-wait cycles are removed.
+- **Deadlock and Coffman conditions:** mutual exclusion is inherent to the
+  dongle state protected by `mtx_dongles`; hold-and-wait is eliminated because
+  the two dongles are acquired atomically; circular wait cannot form because no
+  coder holds one dongle while requesting the second; no-preemption is respected
+  because only the holder releases, and both dongles are returned together.
 - **Starvation:** FIFO uses a monotonic ticket; EDF uses the closest deadline
-  with a ticket tie-break. Election is recomputed on every wake-up, and a coder
-  whose pair is busy cannot block a disjoint pair (work-conserving election).
-- **Cooldown:** `available_at` is protected by `mtx_dongles`; waiters use a
-  timed wait only for a real future cooldown and are woken by broadcast.
+  with the ticket as tie-break. The election is recomputed on every wake-up and
+  skips coders whose pair is blocked or cooling, so a coder waiting for a busy
+  pair cannot stall a coder whose pair is free.
+- **Cooldown:** `available_at` is protected by `mtx_dongles`; waiters use
+  `pthread_cond_timedwait` only for a real future cooldown, and a release uses
+  `pthread_cond_broadcast`. There is no polling or busy-wait.
+- **Lost and spurious wake-ups:** every wait is inside a `while` predicate; the
+  shared state changes before the broadcast, while the mutex is held.
 - **Burnout precision:** the monitor samples every 5 ms and uses a strict `>`
-  comparison, so detection is at most one sample late (inside the 10 ms window).
+  comparison. Detection is at most one sample late (measured at most 7 ms in
+  the final tests), inside the subject's 10 ms window; the log timestamp is taken
+  when burnout is detected.
 - **Log serialisation:** every complete log line is printed under `mtx_log`, so
-  messages from different threads cannot interleave.
+  lines from different threads cannot interleave.
+- **Single coder / same dongle:** a coder whose left and right ids are the same
+  refuses the pair, sleeps without spinning, and terminates through burnout.
+- **Partial thread creation:** only successfully created coder threads are
+  joined; the simulation stops and wakes any waiters before joining.
+- **No mutex during long work:** compile, debug, refactor, `usleep` and output
+  happen outside `mtx_dongles`; critical sections only change state or queue
+  entries.
+- **Lock order:** the only nested order is monitor `mtx_dongles` → `mtx_log`;
+  no path takes them in the opposite order.
 
 ## Thread synchronization mechanisms
 
-The project uses mutexes and condition variables to protect shared state.
+The implementation uses two mutexes and one condition variable.
 
-`mtx_dongles` protects the dongle state array: both `state_dongle` and
-`available_at` are read and written together, never separately. `mtx_log`
-protects output. `cond_dongles` wakes coders waiting for resources.
+- `mtx_dongles` is the main data mutex. It protects dongle ownership
+  (`state_dongle`), cooldown timestamps (`available_at`), the scheduler queue
+  (`items`, `size`, `capacity`, `deferred`), coder counters
+  (`number_of_compiles_done`, `last_compilation`) and `simulation_status`.
+  Keeping them together makes the pair check and the pair mark atomic.
+- `mtx_log` serializes complete output lines. It is held only while printing one
+  line; `log_line` does not take `mtx_dongles`, so there is no inverse lock order.
+- `cond_dongles` is the wait/wake channel. Coders wait for both dongles, a
+  cooldown deadline, scheduler election or simulation stop; the monitor
+  broadcasts after changing the state.
 
-Initialisation and destruction live in `sync.c`. Initialisation reports which
-primitive failed, and destruction only destroys what was successfully created,
-using a count of created primitives.
+The wait protocol is:
 
-Since 4.7a, `mtx_dongles` also protects `number_of_compiles_done`,
-`last_compilation` and `simulation_status`. A coder updates `last_compilation`
-inside `block_dongles` while the lock is held, the monitor scans the same fields
-under the lock in `check_simulation_state`, and status reads outside the monitor
-use `simulation_is_running`. This avoids a second mutex and a second lock order;
-the monitor contends only once every 5 ms.
+- Every wait is inside a `while` and rechecks its predicate, so spurious wake-ups
+  cannot acquire a pair.
+- The state changes before `pthread_cond_broadcast`, under the mutex; this
+  prevents lost wake-ups.
+- `pthread_cond_timedwait` is used only when there is a real future cooldown
+  deadline. If the deadline is absent or already past, the coder uses
+  `pthread_cond_wait` instead of spinning.
+- No mutex is held during `usleep`, compile, debug or refactor. Critical sections
+  are kept short and only change shared state.
 
-Mutexes protect:
-
-- Dongle ownership.
-- Dongle cooldown timestamps.
-- Coder state (`number_of_compiles_done`, `last_compilation`).
-- Simulation status.
-- Output logging.
-- Scheduler queues.
-
-Condition variables will allow coder threads to wait until:
-
-- Both required dongles become available.
-- A cooldown expires.
-- The simulation finishes.
-- The scheduler selects a waiting coder.
-
-The program must avoid holding a mutex while performing long operations such as:
-
-- `usleep`.
-- Compilation simulation.
-- Debugging.
-- Refactoring.
-- Long output operations.
-
-Critical sections should remain as short as possible.
+Initialization and destruction live in `sync.c`. `init_sync` initializes
+`mtx_dongles`, `mtx_log` and `cond_dongles` in order and cleans up partial
+initialization in reverse order. `destroy_sync` destroys only what was
+successfully created; all threads are joined before destroy/free.
 
 ---
 
